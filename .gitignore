@@ -25,9 +25,13 @@ venv/
 **/logs/
 *.log
 **/.server.pid
-**/.server.pid
 .auto_progress_state.json
 **/checkpoints/
+
+# ---- 运行时 home（后端 THIN_AGENT_HOME；凭据/日志/插件二进制不入库）----
+backends/thin_agent_home/
+**/.thin_agent/
+**/plugins/*.so
 
 # ---- 凭据（绝不入库）----
 **/.env
