@@ -1,0 +1,22 @@
+{"id": "w_holdout_01", "text": "上海今天多少度", "last_intent": "", "last_slots": {}, "expect_intent": "weather", "expect_min_confidence": 0.45, "notes": "单轮口语天气，holdout 变体"}
+{"id": "w_holdout_02", "text": "北京天气怎么样", "last_intent": "", "last_slots": {}, "expect_intent": "weather", "expect_min_confidence": 0.45, "notes": "城市+天气"}
+{"id": "w_holdout_03", "text": "帮我看看杭州气温", "last_intent": "", "last_slots": {}, "expect_intent": "weather", "expect_min_confidence": 0.45, "notes": "气温同义词"}
+{"id": "w_ctx_holdout_01", "text": "今天天气如何", "last_intent": "weather", "last_slots": {"city": "上海"}, "expect_intent": "weather", "expect_min_confidence": 0.45, "notes": "多轮省略城市"}
+{"id": "w_ctx_holdout_02", "text": "广州的呢", "last_intent": "weather", "last_slots": {"city": "上海"}, "expect_intent": "weather", "expect_min_confidence": 0.45, "notes": "多轮切换城市"}
+{"id": "w_en_holdout", "text": "what's the weather in beijing", "last_intent": "", "last_slots": {}, "expect_intent": "weather", "expect_min_confidence": 0.45, "notes": "英文天气"}
+{"id": "n_holdout_01", "text": "来点科技头条", "last_intent": "", "last_slots": {}, "expect_intent": "news", "expect_min_confidence": 0.45, "notes": "新闻同义表达"}
+{"id": "n_holdout_02", "text": "还有别的快讯吗", "last_intent": "news", "last_slots": {"topic_or_scope": "AI"}, "expect_intent": "news", "expect_min_confidence": 0.45, "notes": "新闻多轮追问"}
+{"id": "n_ctx_holdout_01", "text": "财经方向的呢", "last_intent": "news", "last_slots": {"topic_or_scope": "AI"}, "expect_intent": "news", "expect_min_confidence": 0.45, "notes": "新闻 topic 切换"}
+{"id": "n_en_holdout", "text": "latest tech news", "last_intent": "", "last_slots": {}, "expect_intent": "news", "expect_min_confidence": 0.45, "notes": "英文新闻"}
+{"id": "p_holdout_01", "text": "介绍一下你的能力", "last_intent": "", "last_slots": {}, "expect_intent": "profile", "expect_min_confidence": 0.45, "notes": "profile 变体"}
+{"id": "p_holdout_02", "text": "tell me about yourself", "last_intent": "", "last_slots": {}, "expect_intent": "profile", "expect_min_confidence": 0.45, "notes": "英文 profile"}
+{"id": "s_holdout_01", "text": "当前用的什么模型", "last_intent": "", "last_slots": {}, "expect_intent": "status", "expect_min_confidence": 0.45, "notes": "status 变体"}
+{"id": "s_holdout_02", "text": "provider是什么", "last_intent": "", "last_slots": {}, "expect_intent": "status", "expect_min_confidence": 0.45, "notes": "provider 关键词"}
+{"id": "m_holdout_01", "text": "刚才最后显示的是哪里的天气", "last_intent": "weather", "last_slots": {"city": "上海"}, "expect_intent": "memory_recent", "expect_route": "local_memory_recent", "expect_min_confidence": 0.45, "notes": "天气 recall，非 external_weather"}
+{"id": "m_holdout_02", "text": "刚才看的是什么方向的新闻", "last_intent": "news", "last_slots": {"topic_or_scope": "AI"}, "expect_intent": "memory_recent", "expect_route": "local_memory_recent", "expect_min_confidence": 0.45, "notes": "新闻 topic recall"}
+{"id": "e_holdout_01", "text": "最近有什么事件", "last_intent": "", "last_slots": {}, "expect_intent": "event_recent", "expect_min_confidence": 0.45, "notes": "事件查询"}
+{"id": "g_holdout_01", "text": "帮我搜一下相关信息", "last_intent": "", "last_slots": {}, "expect_intent": "general", "expect_min_confidence": 0.45, "notes": "开放检索类"}
+{"id": "u_holdout_01", "text": "帮我拍张照", "last_intent": "", "last_slots": {}, "expect_intent": "unknown", "notes": "任务类，ONNX 不应可执行接管"}
+{"id": "u_holdout_02", "text": "好的", "last_intent": "weather", "last_slots": {"city": "上海"}, "expect_intent": "unknown", "notes": "极短确认"}
+{"id": "u_holdout_03", "text": "xyzzy-onnx-golden-holdout-token", "last_intent": "", "last_slots": {}, "expect_intent": "unknown", "notes": "Tier2 探针句 holdout"}
+{"id": "u_holdout_04", "text": "不是问你，是问另外一个ONNX模型是什么", "last_intent": "", "last_slots": {}, "expect_intent": "unknown", "notes": "开放知识问答，非本地可执行意图"}

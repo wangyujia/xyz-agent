@@ -1,0 +1,17 @@
+{
+  "labels": [
+    "unknown",
+    "profile",
+    "weather",
+    "news",
+    "status",
+    "general",
+    "memory_recent",
+    "event_recent",
+    "memory_history",
+    "media_capture",
+    "media_review",
+    "media_share"
+  ],
+  "feature_dim": 64
+}

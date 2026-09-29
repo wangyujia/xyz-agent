@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.thinagent.daemon</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/thin_agentd</string>
+        <string>--config</string>
+        <string>/usr/local/etc/thin_agent/demo.model.yaml</string>
+        <string>--profile</string>
+        <string>default</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/usr/local/var/thin_agent</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>5</integer>
+
+    <key>StandardOutPath</key>
+    <string>/usr/local/var/log/thin_agentd.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/usr/local/var/log/thin_agentd.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>THIN_AGENT_DATA_DIR</key>
+        <string>/usr/local/var/thin_agent</string>
+    </dict>
+</dict>
+</plist>

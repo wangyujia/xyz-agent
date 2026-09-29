@@ -1,0 +1,55 @@
+/build
+/build-release
+/build_release
+/build-aarch64
+/dist
+
+# ONNX Runtime prebuilt (auto-fetched by build.sh cam)
+third_party/onnxruntime-aarch64/
+third_party/onnxruntime/lib/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Secrets / local env
+.env
+.env.*
+!.env.example
+
+# Runtime / test-generated under data/ (local files kept, not committed)
+data/*.db
+data/*.jsonl
+data/*.db-wal
+data/*.db-shm
+data/*.db-journal
+data/*.txt
+
+# Test policy fixtures (tracked)
+!data/test_chat_policy.json
+!data/test_chat_policy_cloud_clarify.json
+!data/test_chat_policy_skill.json
+
+# Editor / OS
+.cursor/
+.vscode/
+*.swp
+*~
+.DS_Store
+
+# Local automation state
+.auto_progress_state.json
+third_party/llama.cpp/
+models/gguf/
+models/intent/onnx/model.onnx
+build_asan
+build_cov/
+tests/
+build-asan/
+__pycache__/
+build_release/

@@ -1,0 +1,54 @@
+# ===== xyz-agent 顶层忽略规则 =====
+# 原则：**只提交源码/文档/配置/脚本/测试/小资源**；生成物、大件、运行期产物、凭据一律不入库。
+# （与 backends/thin_agent/.gitignore、frontends/.gitignore 的既有约定一致）
+
+# ---- 构建产物 ----
+**/build/
+**/build-*/
+**/build_release/
+**/build_asan/
+**/build_cov/
+**/Testing/
+CMakeFiles/
+CMakeCache.txt
+
+# ---- Python ----
+**/.venv/
+venv/
+**/__pycache__/
+*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+*.egg-info/
+
+# ---- 运行期产物 ----
+**/logs/
+*.log
+**/.server.pid
+**/.server.pid
+.auto_progress_state.json
+**/checkpoints/
+
+# ---- 凭据（绝不入库）----
+**/.env
+**/.env.*
+!**/.env.example
+**/access_tokens.yaml
+**/*credential*
+**/*secret*
+
+# ---- 大件 / 外部获取物（本地保留，不入库）----
+# 与 backends/thin_agent/.gitignore 一致：gguf 权重与预编译 ONNX Runtime 由 build.sh 拉取或本地保留
+backends/thin_agent/models/gguf/
+backends/thin_agent/models/intent/onnx/model.onnx
+backends/thin_agent/third_party/onnxruntime/lib/
+backends/thin_agent/third_party/onnxruntime-aarch64/
+backends/thin_agent/dist/
+
+# ---- 知识库派生数据（正文在 markdown，DB 为索引）----
+backends/knowledge_base/kb.db
+backends/knowledge_base/.search.db
+
+# ---- 临时/隔离区 ----
+_quarantine/
+*.tmp

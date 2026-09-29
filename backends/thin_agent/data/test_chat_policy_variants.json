@@ -1,0 +1,8 @@
+{
+  "templates": {
+    "chat.messaging_capability_clarify": [
+      "[VARIANT_A] 你是想看会话消息、记忆检索，还是新闻查询？",
+      "[VARIANT_B] 你要查的是消息记录、记忆，还是新闻？"
+    ]
+  }
+}

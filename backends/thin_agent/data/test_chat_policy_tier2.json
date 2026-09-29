@@ -1,0 +1,21 @@
+{
+  "intent_classifier": {
+    "model": "test-flash",
+    "prompt_zh": "你是一个意图分类器。分析用户输入，只返回JSON。",
+    "prompt_en": "You are an intent classifier. Return JSON only."
+  },
+  "intent_map": {
+    "profile": {"has_local_handler": true},
+    "status": {"has_local_handler": true},
+    "weather": {"has_local_handler": true},
+    "news": {"has_local_handler": true},
+    "event": {"has_local_handler": true},
+    "general_query": {"has_local_handler": true},
+    "complex": {"has_local_handler": false},
+    "external": {"has_local_handler": false},
+    "unknown": {"has_local_handler": false}
+  },
+  "nlp": {
+    "chat_abbreviations": {"u":"you","r":"are","ur":"your","plz":"please"}
+  }
+}

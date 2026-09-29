@@ -1,0 +1,2176 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AgentTool</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background: #eef1f6;
+      color: #1f2d3d;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    :root {
+      --brand: #3d6fb4;
+      --brand-deep: #2b5290;
+      --brand-ink: #1e3a5f;
+      --bg-soft: #f4f7fa;
+      --line: #e2e8f1;
+      --ok: #0da678;
+      --warn: #d98207;
+      --bad: #d43d3d;
+      --shadow-card: 0 1px 3px rgba(30, 58, 95, 0.07), 0 4px 14px rgba(30, 58, 95, 0.05);
+    }
+
+    .header {
+      background: linear-gradient(120deg, #2b5290 0%, #3d6fb4 55%, #4d81c4 100%);
+      color: #fff;
+      padding: 12px 18px;
+      box-shadow: 0 2px 10px rgba(30, 58, 95, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      position: relative;
+      z-index: 2;
+    }
+    .header h2 {
+      font-size: 17px;
+      font-weight: 650;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .header h2::before {
+      content: "";
+      width: 22px; height: 22px;
+      border-radius: 7px;
+      background: rgba(255, 255, 255, 0.16);
+      box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.35);
+      flex: none;
+    }
+    .status-wrap {
+      display: flex; align-items: center; gap: 8px; font-size: 13px;
+      background: rgba(255, 255, 255, 0.12);
+      padding: 5px 12px;
+      border-radius: 999px;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+    }
+    .status-dot {
+      width: 9px; height: 9px; border-radius: 50%;
+      background: #ff7b7b;
+      box-shadow: 0 0 0 3px rgba(255, 123, 123, 0.25);
+      animation: pulse 2s infinite;
+    }
+    .status-dot.connected {
+      background: #55e69c;
+      box-shadow: 0 0 0 3px rgba(85, 230, 156, 0.28);
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+    #agentVersion {
+      font-size: 11.5px;
+      font-weight: 500;
+      background: rgba(255, 255, 255, 0.14);
+      border-radius: 999px;
+      padding: 2px 9px;
+      letter-spacing: 0;
+    }
+
+    .main {
+      display: flex;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .left-panel {
+      flex: 2;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      border-right: 1px solid var(--line);
+      background: #f7f9fc;
+    }
+
+    .right-panel {
+      flex: 1;
+      min-width: 340px;
+      background: #f2f5f9;
+      overflow-y: auto;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .connection-panel {
+      background: rgba(255, 255, 255, 0.92);
+      border-bottom: 1px solid var(--line);
+      padding: 10px 14px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      box-shadow: 0 1px 4px rgba(30, 58, 95, 0.05);
+    }
+
+    input, select, textarea, button {
+      border: 1px solid #cfd9e6;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 13px;
+      outline: none;
+      font-family: inherit;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--brand);
+      box-shadow: 0 0 0 3px rgba(61, 111, 180, 0.14);
+    }
+    input, select, textarea { width: 100%; background: #fff; color: #1f2d3d; }
+    button {
+      background: linear-gradient(180deg, #4a7cb8 0%, #3d6fb4 100%);
+      color: #fff;
+      cursor: pointer;
+      border: none;
+      white-space: nowrap;
+      font-weight: 500;
+      letter-spacing: 0.2px;
+      box-shadow: 0 1px 2px rgba(30, 58, 95, 0.18);
+      transition: filter 0.15s, transform 0.06s, box-shadow 0.15s;
+    }
+    button:hover { filter: brightness(1.08); box-shadow: 0 2px 6px rgba(30, 58, 95, 0.24); }
+    button:active { transform: translateY(1px); filter: brightness(0.97); }
+
+    .messages-wrap {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background:
+        radial-gradient(1200px 500px at 20% -10%, rgba(61, 111, 180, 0.05), transparent 60%),
+        #eceff4;
+    }
+
+    .msg-row {
+      display: flex;
+      width: 100%;
+    }
+    .msg-row.out { justify-content: flex-end; }
+    .msg-row.in { justify-content: flex-start; }
+    .msg-row.sys { justify-content: center; }
+
+    .msg-row > div {
+      max-width: min(98%, 1320px);
+    }
+    .msg-bubble {
+      display: inline-block;
+      width: fit-content;
+      min-width: 44px;
+      max-width: 100%;
+      border-radius: 14px;
+      padding: 10px 12px;
+      font-size: 14px;
+      line-height: 1.46;
+      white-space: pre-wrap;
+      word-break: keep-all;
+      overflow-wrap: anywhere;
+      box-shadow: 0 1px 2px rgba(30, 58, 95, 0.06), 0 3px 10px rgba(30, 58, 95, 0.06);
+      border: 1px solid rgba(31, 45, 61, 0.07);
+    }
+    .msg-row.out .msg-bubble {
+      background: linear-gradient(180deg, #e0f9c8 0%, #d4f3b6 100%);
+      color: #243d24;
+      border-color: rgba(101, 152, 74, 0.22);
+      border-bottom-right-radius: 4px;
+    }
+    .msg-row.in .msg-bubble {
+      background: #fff;
+      color: #1f2d3d;
+      border-bottom-left-radius: 4px;
+    }
+    .msg-row.sys .msg-bubble { background: #eef3f9; color: #5a6b7d; }
+    .msg-time { font-size: 11px; color: #93a3b4; margin-top: 4px; }
+    .msg-row.sys .msg-time { text-align: center; }
+    .msg-row.out .msg-time { text-align: right; }
+    .msg-bubble .title { font-weight: 700; margin-bottom: 6px; color: #2d4f74; font-size: 14px; }
+    .msg-bubble .sub { font-size: 12px; color: #5d7187; margin-top: 6px; }
+    .msg-bubble .replay-hit {
+      margin-top: 6px;
+      padding: 4px 8px;
+      border-radius: 8px;
+      background: #fff6d6;
+      color: #7a4a00;
+      border: 1px solid #f1d38b;
+      font-size: 12px;
+      font-weight: 600;
+      display: inline-block;
+    }
+    .msg-bubble .evidence-list {
+      margin-top: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .msg-bubble .evidence-row {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: #f7fafc;
+      color: #2f455d;
+      border: 1px solid #dbe7f2;
+      border-radius: 8px;
+      padding: 6px 8px;
+      font-size: 12px;
+      line-height: 1.4;
+      cursor: pointer;
+    }
+    .msg-bubble .evidence-row:hover { background: #eef5fb; }
+    .msg-bubble .evidence-row.flash {
+      animation: evidenceFlash 1.2s ease-in-out 1;
+      border-color: #f0b84a;
+      background: #fff5dc;
+    }
+    @keyframes evidenceFlash {
+      0% { box-shadow: 0 0 0 0 rgba(240, 184, 74, 0.9); }
+      50% { box-shadow: 0 0 0 8px rgba(240, 184, 74, 0.15); }
+      100% { box-shadow: 0 0 0 0 rgba(240, 184, 74, 0); }
+    }
+    .msg-bubble h1, .msg-bubble h2, .msg-bubble h3, .msg-bubble h4 {
+      margin: 6px 0 4px;
+      color: #23486f;
+      line-height: 1.35;
+    }
+    .msg-bubble h1 { font-size: 18px; }
+    .msg-bubble h2 { font-size: 16px; }
+    .msg-bubble h3 { font-size: 14px; }
+    .msg-bubble h4 { font-size: 13px; }
+    .msg-bubble p { margin: 2px 0; }
+    .msg-bubble ul, .msg-bubble ol {
+      margin: 4px 0 4px 20px;
+      padding: 0;
+    }
+    .msg-bubble li { margin: 1px 0; }
+    .msg-bubble li strong { font-weight: 700; }
+    .msg-bubble .trace-block {
+      margin-top: 8px;
+      padding-top: 6px;
+      border-top: 1px dashed #d7e0ea;
+      font-size: 12px;
+      line-height: 1.38;
+      color: #6a7f94;
+    }
+    .msg-bubble .trace-block .trace-title {
+      font-weight: 600;
+      margin-bottom: 4px;
+      color: #5f7489;
+      font-size: 12px;
+    }
+    .msg-bubble .trace-block ol {
+      margin: 4px 0 0 16px;
+      padding: 0;
+    }
+    .msg-bubble .trace-block li {
+      margin: 1px 0;
+    }
+    .msg-bubble blockquote {
+      margin: 6px 0;
+      padding: 4px 8px;
+      border-left: 3px solid #9fb9d3;
+      background: #f5f9ff;
+      color: #355476;
+      border-radius: 4px;
+    }
+    .msg-bubble hr {
+      border: none;
+      border-top: 1px solid #d7e0ea;
+      margin: 8px 0;
+    }
+    .msg-bubble a {
+      color: #1f5e95;
+      text-decoration: underline;
+      word-break: break-all;
+    }
+    .msg-bubble code {
+      font-family: ui-monospace, Consolas, monospace;
+      background: #edf3fb;
+      border: 1px solid #d8e5f3;
+      border-radius: 4px;
+      padding: 1px 4px;
+      font-size: 12px;
+    }
+    .msg-bubble pre {
+      margin: 6px 0;
+      overflow: auto;
+      background: #0f172a;
+      color: #dbe7ff;
+      border-radius: 8px;
+      padding: 8px;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 12px;
+    }
+    .msg-bubble pre code {
+      border: none;
+      background: transparent;
+      padding: 0;
+      color: inherit;
+    }
+    .msg-bubble .json-card {
+      margin-top: 6px;
+      border: 1px solid #d7e0ea;
+      border-radius: 8px;
+      background: #f8fbff;
+      overflow: hidden;
+    }
+    .msg-bubble .json-card > summary {
+      cursor: pointer;
+      list-style: none;
+      padding: 6px 8px;
+      font-size: 12px;
+      color: #355476;
+      background: #eef4fb;
+      user-select: none;
+    }
+    .msg-bubble .json-card pre {
+      margin: 0;
+      padding: 8px;
+      font-size: 12px;
+      max-height: 220px;
+      overflow: auto;
+      font-family: ui-monospace, Consolas, monospace;
+      background: #0f172a;
+      color: #dbe7ff;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .confirm-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .confirm-actions button { padding: 6px 10px; border-radius: 999px; font-size: 12px; }
+
+    .chat-input-panel {
+      background: #fff;
+      border-top: 1px solid var(--line);
+      padding: 12px 14px;
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+      box-shadow: 0 -2px 10px rgba(30, 58, 95, 0.05);
+    }
+    .chat-input {
+      flex: 1;
+      min-height: 42px;
+      max-height: 120px;
+      resize: vertical;
+      line-height: 1.45;
+    }
+
+    .section {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      box-shadow: var(--shadow-card);
+    }
+    .section-title {
+      font-size: 12.5px;
+      color: var(--brand-deep);
+      font-weight: 700;
+      margin-bottom: 9px;
+      letter-spacing: 0.6px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .section-title::before {
+      content: "";
+      width: 4px; height: 14px;
+      border-radius: 2px;
+      background: linear-gradient(180deg, #4d81c4, #3d6fb4);
+      flex: none;
+    }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+    .btn-lite {
+      background: #fff;
+      color: #456;
+      border: 1px solid #cfd9e6;
+      box-shadow: 0 1px 2px rgba(30, 58, 95, 0.08);
+    }
+    .btn-lite:hover { background: #f0f5fb; border-color: #b8c8dd; filter: none; color: var(--brand-deep); }
+
+    .debug-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+    .debug-log {
+      width: 100%;
+      min-height: 180px;
+      max-height: 320px;
+      overflow: auto;
+      background: #0f172a;
+      color: #dbe7ff;
+      border-radius: 8px;
+      padding: 8px;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    @media (min-width: 1600px) {
+      /* 对齐 ws_cli：超宽屏不做页面居中限宽，直接全宽铺满 */
+      .main {
+        width: 100%;
+      }
+      .left-panel {
+        flex: 2.35;
+      }
+      .right-panel {
+        flex: 0.9;
+        min-width: 360px;
+      }
+      .messages-wrap {
+        padding-left: 14px;
+        padding-right: 14px;
+      }
+      .msg-row > div {
+        max-width: min(98%, 1440px);
+      }
+    }
+
+    @media (max-width: 1180px) {
+      .main { flex-direction: column; }
+      .left-panel { border-right: none; border-bottom: 1px solid #d9e0e8; }
+      .right-panel { min-width: 0; max-height: 45vh; }
+    }
+
+    /* typing dots 跳动动画 */
+    .typing-dots { display: inline-flex; gap: 2px; }
+    .typing-dots span {
+      animation: dotBounce 1.4s infinite;
+      font-size: 1.1em;
+    }
+    .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes dotBounce {
+      0%, 80%, 100% { opacity: 0.3; transform: translateY(0); }
+      40% { opacity: 1; transform: translateY(-2px); }
+    }
+  </style>
+  <style>
+    /* WebView 模式：隐藏仅浏览器需要的调试按钮 */
+    .webview-hidden { display: none !important; }
+    ::-webkit-scrollbar { width: 9px; height: 9px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+      background: #c3cfdd;
+      border-radius: 5px;
+      border: 2px solid transparent;
+      background-clip: padding-box;
+    }
+    ::-webkit-scrollbar-thumb:hover { background-color: #a9b9cc; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h2>智能体开发维护工具<span id="agentVersion"></span></h2>
+    <div class="status-wrap">
+      <span id="connDot" class="status-dot"></span>
+      <span id="connText">未连接</span>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="left-panel">
+      <div class="connection-panel">
+        <input id="wsUrl" value="ws://127.0.0.1:8765/ws"
+               placeholder="ws://IP:PORT/ws" style="flex:1" />
+        <button onclick="connectWs()" id="connBtn">连接</button>
+        <button class="btn-lite" onclick="disconnectWs()">断开</button>
+        <select id="backendSel" onchange="onBackendSelect()" style="max-width:180px">
+          <option value="">已保存后端...</option>
+        </select>
+        <button class="btn-lite" onclick="saveBackend()" title="保存当前 URL">💾</button>
+        <button class="btn-lite" onclick="removeBackend()" title="删除选中后端">✕</button>
+        <label style="font-size:11px;display:flex;align-items:center;gap:2px;white-space:nowrap">
+          <input type="checkbox" id="autoReconnect" checked onchange="saveSettings()" />
+          自动重连
+        </label>
+        <input id="chatIdInput" placeholder="chat_id（会话隔离，空=默认）"
+               style="width:170px;font-size:12px" onchange="onChatIdChange()" />
+        <input id="threadIdInput" placeholder="thread_id（可空）"
+               style="width:120px;font-size:12px" onchange="onChatIdChange()" />
+      </div>
+
+      <div class="section" style="border-radius:0; border-left:none; border-right:none; border-top:none; margin:0;">
+        <div class="debug-tools">
+          <button class="btn-lite" onclick="copyChatMessages()">拷贝消息</button>
+          <button class="btn-lite" onclick="clearChatMessages()">清除消息</button>
+          <button class="btn-lite" id="traceToggleBtn" onclick="toggleDecisionTrace()">显示决策轨迹</button>
+          <button class="btn-lite debug-btn-browser" id="debugToggleBtn" onclick="toggleDebugPanel()">展开调试日志</button>
+          <button class="btn-lite debug-btn-browser" onclick="copyDebugLog()">拷贝调试日志</button>
+          <button class="btn-lite debug-btn-browser" onclick="clearDebugLog()">清空调试日志</button>
+        </div>
+        <div id="debugPanel" style="display:none;">
+          <div style="font-size:12px;color:#607487;margin-bottom:6px;">这里显示完整结构化消息（JSON/事件/调试信息），主聊天区只显示用户可读内容。</div>
+          <div id="debugLog" class="debug-log"></div>
+        </div>
+      </div>
+
+      <div id="log" class="messages-wrap"></div>
+
+      <div id="slashBar" style="display:flex;gap:6px;flex-wrap:wrap;padding:6px 14px;background:#fbfcfe;border-top:1px solid var(--line);">
+        <span style="font-size:11px;color:#8a99a8;align-self:center;">快捷：</span>
+        <button class="btn-lite slash-quick" data-cmd="/new" style="padding:3px 10px;font-size:12px;">/new</button>
+        <button class="btn-lite slash-quick" data-cmd="/stop" style="padding:3px 10px;font-size:12px;">/stop</button>
+        <button class="btn-lite slash-quick" data-cmd="/compact" style="padding:3px 10px;font-size:12px;">/compact</button>
+        <button class="btn-lite slash-quick" data-cmd="/status" style="padding:3px 10px;font-size:12px;">/status</button>
+        <button class="btn-lite slash-quick" data-cmd="/model" style="padding:3px 10px;font-size:12px;">/model</button>
+        <button class="btn-lite slash-quick" data-cmd="/tools" style="padding:3px 10px;font-size:12px;">/tools</button>
+        <button class="btn-lite slash-quick" data-cmd="/sessions" style="padding:3px 10px;font-size:12px;">/sessions</button>
+        <button class="btn-lite slash-quick" data-cmd="/help" style="padding:3px 10px;font-size:12px;">/help</button>
+      </div>
+
+      <div class="chat-input-panel" style="position:relative;">
+        <div id="slashHint" style="display:none;position:absolute;bottom:100%;left:14px;right:110px;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 4px 14px rgba(30,58,95,0.14);padding:6px 8px;z-index:30;max-height:180px;overflow-y:auto;"></div>
+        <textarea id="chatText" class="chat-input" rows="2" placeholder="输入消息（Enter发送，Shift+Enter换行；/ 唤起命令）"></textarea>
+        <button onclick="sendChat()">发送</button>
+      </div>
+    </div>
+
+    <div class="right-panel">
+      <div class="section" id="liveStatsSection">
+        <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
+          <span>实时状态</span>
+          <span id="liveStatsMeta" style="font-weight:400;font-size:11px;color:#8a99a8;">每 5s 刷新</span>
+        </div>
+        <div id="liveStatsCard" style="font-size:12px;line-height:1.55;border-radius:10px;padding:10px 12px;background:linear-gradient(135deg,#1e3a5f 0%,#2b5290 70%,#33619f 100%);color:#dbe7f7;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.09), 0 2px 8px rgba(30,58,95,0.25);">
+          <div style="color:#9db8d9;">等待连接…</div>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-title">状态 / 观测</div>
+        <div class="row">
+          <button onclick="sendStatus()">状态</button>
+          <button onclick="sendPing()">Ping</button>
+          <button onclick="sendEventRecent()">最近事件</button>
+          <button onclick="sendMemoryRecent()">最近短期记忆</button>
+          <button onclick="sendMemoryHistory()">长期记忆历史</button>
+          <button onclick="sendMemorySearch()">记忆检索</button>
+          <button onclick="sendMemorySummary()">记忆摘要</button>
+          <button onclick="sendMetrics()">运行指标</button>
+          <button onclick="fetchTraceList()">Trace 历史</button>
+        </div>
+        <div id="probeResult" style="font-size:11px;line-height:1.6;margin-top:8px;background:#f6f9fc;border:1px solid #e4ecf4;border-radius:8px;padding:8px 10px;max-height:300px;overflow-y:auto;display:none;">
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">运维统计（/stats HTTP 口）</div>
+        <div class="row">
+          <button onclick="fetchOpsStats()">刷新</button>
+          <span id="opsStatsHint" style="font-size:11px;color:#607487;">数据源 GET /stats，无需 WS 连接</span>
+        </div>
+        <div id="opsStatsPanel" style="font-size:12px;line-height:1.7;margin-top:6px;"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Spawn 子代理（编程任务调试）</div>
+        <textarea id="spawnGoal" rows="3" placeholder="goal：如 在 /tmp/spawn_test 写一个 C++ 冒泡排序并编译验证" style="font-size:12px;"></textarea>
+        <div class="row" style="margin-top:6px;">
+          <input id="spawnMaxTurns" type="number" value="15" min="1" max="60" style="width:110px" title="max_turns" />
+          <input id="spawnRole" placeholder="role（可空）" style="flex:1" />
+          <button onclick="sendSpawn()">派发子代理</button>
+        </div>
+        <div id="spawnResult" style="display:none;margin-top:8px;font-size:11px;line-height:1.6;background:#f6f9fc;border:1px solid #e4ecf4;border-radius:8px;padding:8px 10px;max-height:280px;overflow-y:auto;"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">即时 Action 调用</div>
+        <div class="row">
+          <select id="actionName">
+            <option>health_report</option>
+            <option>collect_logs</option>
+            <option>switch_mode</option>
+            <option>capture_photo</option>
+            <option>start_recording</option>
+            <option>stop_recording</option>
+            <option>fetch_capture_results</option>
+          </select>
+          <input id="actionArgs" value='{}' />
+          <button onclick="sendAction()">执行 Action</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">任务引擎（保持原功能）</div>
+        <div class="grid2">
+          <div>
+            <label>task action</label>
+            <select id="taskAction">
+              <option>capture_photo</option>
+              <option>start_recording</option>
+              <option>stop_recording</option>
+              <option>fetch_capture_results</option>
+              <option>not_allowed_action</option>
+            </select>
+          </div>
+          <div>
+            <label>idempotency_key</label>
+            <input id="idemKey" value="demo-idem-1" />
+          </div>
+          <div>
+            <label>task args(JSON)</label>
+            <input id="taskArgs" value='{}' />
+          </div>
+          <div>
+            <label>task_id</label>
+            <input id="taskId" placeholder="提交后自动回填" />
+          </div>
+          <div>
+            <label>cancel reason</label>
+            <input id="cancelReason" value="user cancel" />
+          </div>
+          <div>
+            <label>audit limit</label>
+            <input id="auditLimit" value="20" />
+          </div>
+          <div>
+            <label>task_list state filter（可空）</label>
+            <input id="listStateFilter" placeholder="如: failed / success" />
+          </div>
+          <div>
+            <label>task_list action filter（可空）</label>
+            <input id="listActionFilter" placeholder="如: capture_photo" />
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:8px">
+          <button onclick="sendTaskSubmit()">提交任务</button>
+          <button onclick="sendTaskGet()">查询任务</button>
+          <button onclick="sendTaskList()">任务列表</button>
+          <button onclick="sendTaskListFiltered()">任务列表(过滤)</button>
+          <button onclick="sendTaskCancel()">取消任务</button>
+          <button onclick="sendTaskReplay()">重放任务</button>
+          <button onclick="sendTaskAudit()">审计轨迹</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+// ── WebView 检测（C++ 桌面端加载前注入 window.__thin_agent_webview__ = true）──
+const isWebView = !!window.__thin_agent_webview__;
+
+let ws = null;
+let reconnectTimer = null;
+let reconnectDelay = 1000;  // 初始 1s，指数退避
+let reconnectAttempts = 0;
+const MAX_RECONNECT_DELAY = 30000;  // 最大 30s
+const logEl = document.getElementById('log');
+const debugLogEl = document.getElementById('debugLog');
+const debugPanelEl = document.getElementById('debugPanel');
+let showDecisionTrace = false;
+let pendingMemoryReplayRowRef = '';
+const connDot = document.getElementById('connDot');
+const connText = document.getElementById('connText');
+let seq = 0;
+
+function setConn(connected, text='') {
+  if (connected) {
+    connDot.classList.add('connected');
+    connText.textContent = text || '已连接';
+  } else {
+    connDot.classList.remove('connected');
+    connText.textContent = text || '未连接';
+  }
+}
+
+function escapeHtml(str = '') {
+  return String(str)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function parseAgentTextToMarkdown(text = '') {
+  const raw = String(text || '').trim();
+  if (!raw) return '';
+  let cleaned = raw.replace(/^\s*\[端云协同-本地裁决\]\s*/, '').trim();
+  const codeBlocks = [];
+  cleaned = cleaned.replace(/```[\w-]*\n?([\s\S]*?)```/g, (block) => {
+    const idx = codeBlocks.length;
+    codeBlocks.push(block);
+    return `@@CODE_BLOCK_${idx}@@`;
+  });
+  // 去掉云模型推理链残留（_draft / think 行）及重复 JSON 块
+  cleaned = cleaned
+    .split('\n')
+    .filter((line) => {
+      const t = line.trim();
+      if (!t) return false;
+      if (/^@@CODE_BLOCK_\d+@@$/.test(t)) return true;
+      if (/^(_draft|draft|_think|think)[：:]/i.test(t)) return false;
+      if (t === 'json' || t === '```' || t === '```json') return false;
+      if (t.startsWith('```')) return false;
+      if (t.startsWith('{') && t.includes('"strategy"') && t.includes('"response_draft"')) return false;
+      return true;
+    })
+    .join('\n')
+    .trim();
+  cleaned = cleaned.replace(/@@CODE_BLOCK_(\d+)@@/g, (_, i) => codeBlocks[Number(i)] || '');
+  // 若正文是完整 JSON 策略对象，优先提取 response_draft / clarify_question
+  if (cleaned.startsWith('{') && cleaned.includes('"strategy"')) {
+    try {
+      const obj = JSON.parse(cleaned);
+      const draft = String(obj.response_draft || '').trim();
+      const clarify = String(obj.clarify_question || '').trim();
+      if (draft) return draft;
+      if (clarify) return clarify;
+    } catch (_e) {
+      // keep cleaned prose
+    }
+  }
+  return cleaned;
+}
+
+function renderMarkdownToHtml(md = '') {
+  let html = escapeHtml(md || '');
+
+  // fenced code blocks → 占位符，避免下游行切分拆散 <pre> 块
+  const codeBlocks = [];
+  html = html.replace(/```([\s\S]*?)```/g, (_m, code) => {
+    const idx = codeBlocks.length;
+    codeBlocks.push(code.replace(/^\n/, ''));
+    return `\n__CB${idx}__\n`;
+  });
+
+  // headings
+  html = html.replace(/^####\s+(.+)$/gm, '<h4>$1</h4>');
+  html = html.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>');
+  html = html.replace(/^#\s+(.+)$/gm, '<h1>$1</h1>');
+
+  // horizontal rule
+  html = html.replace(/^\s*---\s*$/gm, '<hr/>');
+
+  // blockquote
+  html = html.replace(/^>\s?(.+)$/gm, '<blockquote>$1</blockquote>');
+
+  // links [text](url)
+  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+
+  // inline emphasis/code
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+  // lists: simple line-based grouping
+  const lines = html.split('\n');
+  const out = [];
+  let inUl = false;
+  let inOl = false;
+
+  const closeLists = () => {
+    if (inUl) { out.push('</ul>'); inUl = false; }
+    if (inOl) { out.push('</ol>'); inOl = false; }
+  };
+
+  for (const line of lines) {
+    const ul = line.match(/^\s*[-*]\s+(.+)$/);
+    const ol = line.match(/^\s*\d+\.\s+(.+)$/);
+
+    if (ul) {
+      if (inOl) { out.push('</ol>'); inOl = false; }
+      if (!inUl) { out.push('<ul>'); inUl = true; }
+      out.push(`<li>${ul[1]}</li>`);
+      continue;
+    }
+
+    if (ol) {
+      if (inUl) { out.push('</ul>'); inUl = false; }
+      if (!inOl) { out.push('<ol>'); inOl = true; }
+      out.push(`<li>${ol[1]}</li>`);
+      continue;
+    }
+
+    closeLists();
+    out.push(line);
+  }
+  closeLists();
+
+  html = out.join('\n');
+
+  // paragraph-ish wrapping for plain lines (skip existing block tags + code block placeholders)
+  const blockTagRe = /^\s*<(h[1-4]|ul|\/ul|ol|\/ol|li|blockquote|pre|\/pre|hr|\/blockquote)/i;
+  html = html
+    .split('\n')
+    .map((line) => {
+      if (!line.trim()) return '';
+      if (blockTagRe.test(line)) return line;
+      if (/^__CB\d+__$/.test(line.trim())) return line.trim();
+      return `<p>${line}</p>`;
+    })
+    .join('');
+
+  // 恢复 code block 占位符
+  html = html.replace(/__CB(\d+)__/g, (_m, idx) => {
+    const code = codeBlocks[parseInt(idx)];
+    return `<pre><code>${code}</code></pre>`;
+  });
+
+  return html;
+}
+
+function appendBubbleInProgress(label) {
+  const row = document.createElement('div');
+  row.className = 'msg-row in';
+  const box = document.createElement('div');
+  box.className = 'msg-bubble bubble-in';
+  box.style.opacity = '0.7';
+  box.style.fontStyle = 'italic';
+  box.textContent = label;
+  row.appendChild(box);
+  if (logEl) logEl.appendChild(row);
+  if (logEl) logEl.scrollTop = logEl.scrollHeight;
+  return box;
+}
+
+// v0.53.45: 真思考流容器——占位气泡下追加小字流(2000 字滚动窗)
+function appendThinkingStream(cmd_id, content, live) {
+  if (!cmd_id) return;
+  var entry = _thinkingMap[cmd_id];
+  if (!entry || !entry.bubble) return;
+  var streamEl = entry.bubble.querySelector('.think-stream');
+  if (!streamEl) {
+    streamEl = document.createElement('div');
+    streamEl.className = 'think-stream';
+    streamEl.style.cssText =
+      'font-size:11px;color:#888;margin-top:4px;max-height:90px;' +
+      'overflow-y:auto;white-space:pre-wrap;border-left:2px solid #c8d;' +
+      'padding-left:6px';
+    entry.bubble.appendChild(streamEl);
+  }
+  streamEl.textContent += content;
+  if (streamEl.textContent.length > 2000) {
+    streamEl.textContent = streamEl.textContent.slice(-2000);
+  }
+  streamEl.scrollTop = streamEl.scrollHeight;
+  if (!live && streamEl.textContent.trim()) {
+    // 终结帧——流收尾(保留内容,chat_result 到时清占位)
+  }
+  if (logEl) logEl.scrollTop = logEl.scrollHeight;
+}
+
+// 思考进度指示器：更新占位气泡内容（按 cmd_id 定位）
+function updateThinkingIndicator(cmd_id, tier, msg) {
+  if (!cmd_id) return;
+  var entry = _thinkingMap[cmd_id];
+  if (!entry || !entry.bubble) return;
+
+  const label = msg;
+
+  entry.bubble.innerHTML =
+    '<div>' + label + '</div>' +
+    '<div class="typing-dots" style="margin-top:4px"><span>●</span><span>●</span><span>●</span></div>';
+
+  if (logEl) logEl.scrollTop = logEl.scrollHeight;
+}
+// ── thinking 占位 Map（cmd_id → {row, bubble, timer}）──
+var _thinkingMap = {};
+
+// 发送 chat 后立即创建 Agent 占位气泡 + 60s 超时（按 cmd_id 隔离）
+function startThinkingPlaceholder(cmd_id) {
+  if (!cmd_id) return;
+
+  // 清理该 cmd_id 的旧占位
+  var old = _thinkingMap[cmd_id];
+  if (old) {
+    if (old.timer) clearTimeout(old.timer);
+    if (old.row && old.row.parentNode) old.row.parentNode.removeChild(old.row);
+  }
+
+  var row = document.createElement('div');
+  row.className = 'msg-row in';
+
+  var container = document.createElement('div');
+  container.style.display = 'flex';
+  container.style.flexDirection = 'column';
+
+  var box = document.createElement('div');
+  box.className = 'msg-bubble';
+  box.style.opacity = '0.75';
+  box.style.fontSize = '0.9em';
+  box.innerHTML = '<span class="typing-dots"><span>●</span><span>●</span><span>●</span></span>';
+
+  container.appendChild(box);
+  row.appendChild(container);
+  if (logEl) { logEl.appendChild(row); logEl.scrollTop = logEl.scrollHeight; }
+
+  var entry = { row: row, bubble: box, timer: null };
+
+  // 60s 超时（捕获 cmd_id 避免闭包引用 stale entry）
+  var capturedCmdId = cmd_id;
+  entry.timer = setTimeout(function() {
+    var e = _thinkingMap[capturedCmdId];
+    if (e && e.bubble) {
+      e.bubble.style.background = '#fff0f0';
+      e.bubble.style.border = '1px solid #e88';
+      e.bubble.style.opacity = '1';
+      e.bubble.innerHTML = '⏰ 响应超时，请稍后重试';
+    }
+    delete _thinkingMap[capturedCmdId];
+  }, 60000);
+
+  _thinkingMap[cmd_id] = entry;
+}
+
+function appendBubbleRich({ kind = 'sys', title = '', text = '', markdown = '', subtitle = '', traceLines = [], json = null, actions = [], replayHitRowRef = '', evidenceRows = [] } = {}) {
+  const row = document.createElement('div');
+  row.className = `msg-row ${kind}`;
+
+  const box = document.createElement('div');
+  box.style.display = 'flex';
+  box.style.flexDirection = 'column';
+
+  const wrap = document.createElement('div');
+  wrap.className = 'msg-bubble';
+
+  if (title) {
+    const titleEl = document.createElement('div');
+    titleEl.className = 'title';
+    titleEl.textContent = title;
+    wrap.appendChild(titleEl);
+  }
+
+  if (markdown) {
+    const mdEl = document.createElement('div');
+    mdEl.innerHTML = renderMarkdownToHtml(markdown);
+    wrap.appendChild(mdEl);
+  } else if (text) {
+    const txtEl = document.createElement('div');
+    txtEl.textContent = text;
+    wrap.appendChild(txtEl);
+  }
+
+  if (subtitle) {
+    const subEl = document.createElement('div');
+    subEl.className = 'sub';
+    subEl.textContent = subtitle;
+    wrap.appendChild(subEl);
+  }
+
+  if (replayHitRowRef) {
+    const replayEl = document.createElement('div');
+    replayEl.className = 'replay-hit';
+    replayEl.textContent = `已回放命中：row_ref=${replayHitRowRef}`;
+    wrap.appendChild(replayEl);
+  }
+
+  if (Array.isArray(evidenceRows) && evidenceRows.length > 0) {
+    const list = document.createElement('div');
+    list.className = 'evidence-list';
+    evidenceRows.forEach((ev) => {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'evidence-row';
+      row.dataset.rowRef = ev.rowRef;
+      const parts = [];
+      if (ev.taskId) parts.push(ev.taskId);
+      if (ev.kind) parts.push(ev.kind);
+      if (ev.source) parts.push(ev.source);
+      const meta = parts.join(' · ');
+      row.textContent = meta ? `${ev.rowRef} ｜ ${meta}${ev.summary ? ` ｜ ${ev.summary}` : ''}` : `${ev.rowRef}${ev.summary ? ` ｜ ${ev.summary}` : ''}`;
+      row.onclick = () => scrollToEvidenceRow(wrap, ev.rowRef);
+      list.appendChild(row);
+    });
+    wrap.appendChild(list);
+    if (replayHitRowRef) scrollToEvidenceRow(wrap, replayHitRowRef);
+  }
+
+  if (Array.isArray(traceLines) && traceLines.length > 0) {
+    const traceEl = document.createElement('div');
+    traceEl.className = 'trace-block';
+
+    const traceTitle = document.createElement('div');
+    traceTitle.className = 'trace-title';
+    traceTitle.textContent = '决策轨迹';
+    traceEl.appendChild(traceTitle);
+
+    const ol = document.createElement('ol');
+    traceLines.forEach((line) => {
+      const li = document.createElement('li');
+      li.textContent = line;
+      ol.appendChild(li);
+    });
+    traceEl.appendChild(ol);
+    wrap.appendChild(traceEl);
+  }
+
+  if (json && typeof json === 'object') {
+    const details = document.createElement('details');
+    details.className = 'json-card';
+    const summary = document.createElement('summary');
+    summary.textContent = '查看 JSON 详情';
+    const pre = document.createElement('pre');
+    pre.textContent = JSON.stringify(json, null, 2);
+    details.appendChild(summary);
+    details.appendChild(pre);
+    wrap.appendChild(details);
+  }
+
+  if (Array.isArray(actions) && actions.length > 0) {
+    const actionWrap = document.createElement('div');
+    actionWrap.className = 'confirm-actions';
+    actions.forEach((act, idx) => {
+      const btn = document.createElement('button');
+      btn.textContent = act.label || `操作${idx + 1}`;
+      btn.onclick = () => handleRichAction(act);
+      actionWrap.appendChild(btn);
+    });
+    wrap.appendChild(actionWrap);
+  }
+
+  const tm = document.createElement('div');
+  tm.className = 'msg-time';
+  tm.textContent = new Date().toLocaleTimeString();
+
+  box.appendChild(wrap);
+  box.appendChild(tm);
+  row.appendChild(box);
+
+  logEl.appendChild(row);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function appendDebug(text) {
+  const lines = String(text || '').split('\n');
+  if (isWebView) {
+    // WebView 模式：逐行写 C++ DebugLogger（避免换行符被 bridge 转义）
+    for (const ln of lines) {
+      const line = `[${new Date().toLocaleTimeString()}] ${ln}`;
+      if (window.__thin_agent_log__) window.__thin_agent_log__(line);
+    }
+    return;
+  }
+  // 浏览器模式：渲染到调试面板 DOM
+  if (!debugLogEl) return;
+  for (const ln of lines) {
+    const line = `[${new Date().toLocaleTimeString()}] ${ln}`;
+    const el = document.createElement('div');
+    el.textContent = line;
+    debugLogEl.appendChild(el);
+  }
+  debugLogEl.scrollTop = debugLogEl.scrollHeight;
+}
+
+function toggleDebugPanel() {
+  if (!debugPanelEl) return;
+  const btn = document.getElementById('debugToggleBtn');
+  const willShow = (debugPanelEl.style.display === 'none' || !debugPanelEl.style.display);
+  debugPanelEl.style.display = willShow ? 'block' : 'none';
+  if (btn) btn.textContent = willShow ? '收起调试日志' : '展开调试日志';
+}
+
+function toggleDecisionTrace() {
+  showDecisionTrace = !showDecisionTrace;
+  const btn = document.getElementById('traceToggleBtn');
+  if (btn) btn.textContent = `${showDecisionTrace ? '隐藏' : '显示'}决策轨迹`;
+}
+
+function fetchTraceList() {
+  send({ type: 'trace_list', limit: 20 }, '加载 Trace 历史');
+}
+
+function clearDebugLog() {
+  if (debugLogEl) debugLogEl.innerHTML = '';
+}
+
+async function copyDebugLog() {
+  if (!debugLogEl) return;
+
+  const lines = [];
+  debugLogEl.querySelectorAll('div').forEach((line) => {
+    const text = line.innerText ? line.innerText.trim() : '';
+    if (text) lines.push(text);
+  });
+
+  const allText = lines.join('\n');
+  if (!allText) {
+    appendBubbleRich({ kind: 'sys', text: '⚠️ 当前没有可拷贝的调试日志' });
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(allText);
+    appendBubbleRich({ kind: 'sys', text: '✅ 已拷贝调试日志到剪贴板' });
+  } catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = allText;
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+      appendBubbleRich({ kind: 'sys', text: '✅ 已拷贝调试日志到剪贴板' });
+    } catch (err) {
+      appendBubbleRich({ kind: 'sys', text: '❌ 拷贝失败，请检查浏览器权限' });
+    }
+    document.body.removeChild(ta);
+  }
+}
+
+function clearChatMessages() {
+  if (!logEl) return;
+  logEl.innerHTML = '';
+  appendDebug('聊天窗口已清空');
+}
+
+async function copyChatMessages() {
+  if (!logEl) return;
+
+  const lines = [];
+  logEl.querySelectorAll('.msg-row').forEach((row) => {
+    if (row.style.display === 'none') return;
+    const text = row.innerText ? row.innerText.trim() : '';
+    if (text) lines.push(text);
+  });
+
+  const allText = lines.join('\n\n');
+  if (!allText) {
+    appendBubbleRich({ kind: 'sys', text: '⚠️ 当前没有可拷贝的消息' });
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(allText);
+    appendBubbleRich({ kind: 'sys', text: '✅ 已拷贝当前对话窗口消息到剪贴板' });
+  } catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = allText;
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+      appendBubbleRich({ kind: 'sys', text: '✅ 已拷贝当前对话窗口消息到剪贴板' });
+    } catch (err) {
+      appendBubbleRich({ kind: 'sys', text: '❌ 拷贝失败，请检查浏览器权限' });
+    }
+    document.body.removeChild(ta);
+  }
+}
+
+function pickActions(obj) {
+  const candidates = [
+    obj?.actions,
+    obj?.buttons,
+    obj?.confirm_actions,
+    obj?.confirmation?.actions,
+    obj?.confirm?.actions
+  ];
+  const arr = candidates.find((v) => Array.isArray(v));
+  if (!arr) return [];
+  return arr.map((item, i) => ({
+    label: item?.label || item?.text || item?.title || `确认${i + 1}`,
+    payload: item?.payload || item?.request || item?.command || null,
+    text: item?.chat_text || item?.send_text || ''
+  }));
+}
+
+function handleRichAction(action) {
+  if (!action) return;
+  if (action.payload && typeof action.payload === 'object') {
+    if (action.replayRowRef && typeof action.replayRowRef === 'string') {
+      pendingMemoryReplayRowRef = action.replayRowRef.trim();
+    }
+    return send(action.payload, `[确认] ${action.label || action.payload.type || '已发送'}`);
+  }
+  if (action.text) {
+    return send({ type: 'chat', text: action.text }, action.text);
+  }
+  appendBubbleRich({ kind: 'sys', text: '该按钮未携带可执行 payload' });
+}
+
+function summarizeIncoming(obj) {
+  const t = (obj && Object.prototype.hasOwnProperty.call(obj, 'type')) ? String(obj.type || '').trim() : 'unknown';
+  switch (t) {
+    case 'hello':
+      return { title: '系统消息', text: '连接成功，服务端握手完成。' + (obj && obj.version ? ' 版本：' + obj.version : '') };
+    case 'status_result':
+      return { title: '状态更新', text: '已收到系统状态信息。' };
+    case 'task_submit_result':
+      return { title: '任务提交', text: `任务已提交：${obj?.task?.task_id || '-'}。` };
+    case 'task_get_result':
+      return { title: '任务详情', text: `任务状态：${obj?.task?.state || '-'}。` };
+    case 'task_list_result':
+      return { title: '任务列表', text: `已返回任务列表（${(obj?.tasks || []).length} 条）。` };
+    case 'task_audit_result':
+      return { title: '审计轨迹', text: `已返回审计记录（${(obj?.audit || []).length} 条）。` };
+    case 'memory_summary_result':
+      return { title: '记忆摘要', text: '已返回记忆摘要（结构化结果）。' };
+    case 'memory_search_result':
+      return { title: '记忆检索', text: `已返回记忆检索结果（${(obj?.results || []).length} 条）。` };
+    case 'action_result':
+      return { title: 'Action 结果', text: obj?.message || 'Action 调用已返回。' };
+    default:
+      return { title: '结构化消息', text: `收到 ${t}。` };
+  }
+}
+
+// v0.53.25: 查询类结果镜像右栏 probeResult（手动深查统一渲染区）
+function mirrorProbeResult(obj) {
+  const box = document.getElementById('probeResult');
+  if (!box) return;
+  const probeTypes = ['status', 'metrics', 'event_recent_result',
+    'memory_recent_result', 'memory_history_result', 'memory_search_result',
+    'memory_summary_result', 'memory_replay_result', 'pong'];
+  const t = String(obj.type || '');
+  if (!probeTypes.includes(t)) return;
+  box.style.display = 'block';
+  const ts = new Date().toTimeString().slice(0, 8);
+  let body;
+  try {
+    body = JSON.stringify(obj.data ?? obj, null, 1);
+  } catch (e) { body = String(obj); }
+  if (body.length > 4000) body = body.slice(0, 4000) + '\n…(截断)';
+  const div = document.createElement('div');
+  div.style.cssText = 'border-top:1px dashed #d5dee6;padding-top:6px;margin-top:6px;';
+  div.innerHTML = '<div style="color:#4a76a8;font-weight:600;">' + t + ' <span style="color:#8a99a8;font-weight:400">' + ts + '</span></div>' +
+    '<pre style="margin:4px 0 0;white-space:pre-wrap;word-break:break-all;color:#2c3e50;">' + escapeHtml(body) + '</pre>';
+  box.prepend(div);
+  while (box.children.length > 5) box.removeChild(box.lastChild);
+}
+
+function renderSpawnResult(obj) {
+  const box = document.getElementById('spawnResult');
+  if (!box) return;
+  box.style.display = 'block';
+  const ok = !!obj.ok;
+  const goal = String(obj.goal || obj.sub_goal || '');
+  const answer = String(obj.result || obj.final_answer || obj.answer || '');
+  const turns = obj.turns ?? obj.turns_used ?? '?';
+  const tools = obj.tool_calls ?? obj.tools_used ?? '?';
+  const err = String(obj.error || '');
+  const ts = new Date().toTimeString().slice(0, 8);
+  let body = '<div style="border-top:1px dashed #d5dee6;padding-top:6px;margin-top:6px;">' +
+    '<div style="font-weight:650;color:' + (ok ? '#0da678' : '#d43d3d') + ';">' +
+    (ok ? '✅ 子代理完成' : '❌ 子代理失败') +
+    ' <span style="color:#8a99a8;font-weight:400;font-size:10.5px;">' + ts + ' · turns ' + turns + ' · 工具 ' + tools + '</span></div>';
+  if (err) body += '<div style="color:#d43d3d;margin-top:3px;">' + escapeHtml(err.slice(0, 300)) + '</div>';
+  if (answer) body += '<div style="margin-top:4px;color:#2c3e50;white-space:pre-wrap;">' + escapeHtml(answer.slice(0, 1500)) + (answer.length > 1500 ? '\n…(截断)' : '') + '</div>';
+  body += '</div>';
+  box.insertAdjacentHTML('afterbegin', body);
+  while (box.children.length > 3) box.removeChild(box.lastChild);
+}
+
+function renderIncoming(obj) {
+  appendDebug(`<= ${JSON.stringify(obj, null, 2)}`);
+  if (obj && obj.type === 'spawn_result') { renderSpawnResult(obj); mirrorProbeResult(obj); }
+  else mirrorProbeResult(obj);
+
+  if (!obj || typeof obj !== 'object') {
+    appendBubbleRich({ kind: 'in', text: String(obj) });
+    return;
+  }
+
+  const msgType = Object.prototype.hasOwnProperty.call(obj, 'type') ? String(obj.type || '').trim() : '';
+
+  // 流式输出：chat_chunk 消息处理
+  if (msgType === 'chat_chunk') {
+    // v0.53.27: 按 cmd_id 路由流式（并发 chat 不串流）
+    const chunk = String(obj.chunk || '');
+    const done = !!obj.done;
+    const streamKey = String(obj.cmd_id || '_anon');
+    if (!window._streamMap) window._streamMap = {};
+    let entry = window._streamMap[streamKey];
+    if (!entry || !entry.el || !entry.el.isConnected) {
+      entry = { el: appendBubbleInProgress('streaming'), text: '' };
+      window._streamMap[streamKey] = entry;
+    }
+    entry.text += chunk;
+    entry.el.textContent = entry.text;
+    if (done) {
+      // 移除流式 bubble（后续 chat_result 会新建正式 bubble）
+      if (entry.el && entry.el.parentNode) {
+        entry.el.parentNode.removeChild(entry.el);
+      }
+      delete window._streamMap[streamKey];
+    }
+    return;
+  }
+
+  // 思考进度指示器：tier 1/2/3 层级切换
+  // v0.53.45: 兼容真思考流(content/live,v0.53.38 起透传)——live 增量
+  // 追加到占位气泡小字区(2000 字窗),终结帧/旧格式走原 tier/msg 路径
+  if (msgType === 'thinking') {
+    const cmd_id = String(obj.cmd_id || '');
+    const content = String(obj.content || '');
+    if (content) {
+      const live = !!obj.live;
+      appendThinkingStream(cmd_id, content, live);
+      return;
+    }
+    const tier = Number(obj.tier) || 0;
+    const msg = String(obj.msg || '');
+    updateThinkingIndicator(cmd_id, tier, msg);
+    return;
+  }
+
+  // 握手 hello：提取版本号并更新页面标题
+  if (msgType === 'hello') {
+    const ver = String(obj.version || '');
+    if (ver) {
+      const el = document.getElementById('agentVersion');
+      if (el) el.textContent = '（' + ver + '）';
+    }
+  }
+
+  function extractMemoryQueryLimitFromTrace(trace = []) {
+  if (!Array.isArray(trace)) return null;
+  for (const step of trace) {
+    if (!step || step.layer !== 'policy') continue;
+    const input = step.input;
+    if (!input || typeof input !== 'object') continue;
+    const route = typeof input.route === 'string' ? input.route : '';
+    if (route !== 'local_memory_search' && route !== 'local_memory_summary') continue;
+
+    const hasQuery = Object.prototype.hasOwnProperty.call(input, 'query');
+    const hasLimit = Object.prototype.hasOwnProperty.call(input, 'limit');
+    if (!hasQuery && !hasLimit) continue;
+
+    const query = hasQuery ? String(input.query || '').trim() : '';
+    let limit = '';
+    if (hasLimit) {
+      if (typeof input.limit === 'number') limit = String(input.limit);
+      else if (typeof input.limit === 'string') limit = input.limit.trim();
+      else if (input.limit !== null && input.limit !== undefined) limit = String(input.limit);
+    }
+    return { query, limit };
+  }
+  return null;
+}
+
+function extractMemoryLatestBasisFromObservation(observation = null) {
+  if (!observation || typeof observation !== 'object') return null;
+  const lb = observation.evidence_latest_basis;
+  if (!lb || typeof lb !== 'object') return null;
+
+  const rowRef = (typeof lb.row_ref === 'string') ? lb.row_ref.trim() : '';
+  const selectedAt = (typeof lb.selected_at === 'string') ? lb.selected_at.trim() : '';
+  const reason = (typeof lb.reason === 'string') ? lb.reason.trim() : '';
+  if (!rowRef && !selectedAt && !reason) return null;
+  return { rowRef, selectedAt, reason };
+}
+
+function buildMemoryReplayPayloadFromLatest(observation = null, fallbackType = 'memory_search') {
+  if (!observation || typeof observation !== 'object') return null;
+
+  const hint = observation.memory_replay_hint;
+  if (hint && typeof hint === 'object' && hint.payload && typeof hint.payload === 'object') {
+    const payload = hint.payload;
+    const typ = (typeof payload.type === 'string' && payload.type.trim()) ? payload.type.trim() : fallbackType;
+    const query = (typeof payload.query === 'string') ? payload.query : '';
+    let limit = 20;
+    if (typeof payload.limit === 'number' && Number.isFinite(payload.limit)) {
+      limit = Math.max(1, Math.min(200, Math.trunc(payload.limit)));
+    }
+    return { type: typ || 'memory_search', query, limit };
+  }
+
+  const lb = observation.evidence_latest_basis;
+  if (!lb || typeof lb !== 'object') return null;
+  const rowRef = (typeof lb.row_ref === 'string') ? lb.row_ref.trim() : '';
+  if (!rowRef) return null;
+  return { type: fallbackType || 'memory_search', query: rowRef, limit: 20 };
+}
+
+function detectMemoryReplayHit(observation = null, replayRowRef = '') {
+  if (!observation || typeof observation !== 'object') return '';
+  const target = (typeof replayRowRef === 'string') ? replayRowRef.trim() : '';
+  if (!target) return '';
+
+  const latest = observation.evidence_latest_basis;
+  if (latest && typeof latest === 'object') {
+    const lr = (typeof latest.row_ref === 'string') ? latest.row_ref.trim() : '';
+    if (lr === target) return target;
+  }
+
+  if (Array.isArray(observation.results)) {
+    for (const row of observation.results) {
+      if (!row || typeof row !== 'object') continue;
+      const rr = (typeof row.row_ref === 'string') ? row.row_ref.trim() : '';
+      if (rr === target) return target;
+    }
+  }
+
+  const query = (typeof observation.query === 'string') ? observation.query.trim() : '';
+  if (query && query === target) return target;
+
+  return '';
+}
+
+function extractMemoryEvidenceRows(observation = null) {
+  if (!observation || typeof observation !== 'object') return [];
+  if (!Array.isArray(observation.results)) return [];
+
+  const out = [];
+  const seen = new Set();
+  for (const row of observation.results) {
+    if (!row || typeof row !== 'object') continue;
+    const rowRef = (typeof row.row_ref === 'string') ? row.row_ref.trim() : '';
+    if (!rowRef || seen.has(rowRef)) continue;
+    seen.add(rowRef);
+
+    const taskId = (typeof row.task_id === 'string') ? row.task_id.trim() : '';
+    const kind = (typeof row.kind === 'string') ? row.kind.trim() : '';
+    const source = (typeof row.source === 'string') ? row.source.trim() : '';
+    const text = (typeof row.text === 'string') ? row.text.trim() : '';
+    const summary = text.length > 72 ? `${text.slice(0, 72)}…` : text;
+    out.push({ rowRef, taskId, kind, source, summary });
+    if (out.length >= 8) break;
+  }
+  return out;
+}
+
+function flashEvidenceRow(container, rowRef = '') {
+  if (!container || !rowRef) return;
+  const target = container.querySelector(`.evidence-row[data-row-ref="${CSS.escape(rowRef)}"]`);
+  if (!target) return;
+  target.classList.remove('flash');
+  void target.offsetWidth;
+  target.classList.add('flash');
+}
+
+function scrollToEvidenceRow(container, rowRef = '') {
+  if (!container || !rowRef) return;
+  const target = container.querySelector(`.evidence-row[data-row-ref="${CSS.escape(rowRef)}"]`);
+  if (!target) return;
+  target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  flashEvidenceRow(container, rowRef);
+}
+
+if (msgType === 'chat_result') {
+  // 清理 thinking 定时器（保留 DOM 行，后续原地改造为回复气泡）
+  var chatCmdId = String(obj.cmd_id || '');
+  var chatEntry = _thinkingMap[chatCmdId];
+  if (chatEntry && chatEntry.timer) { clearTimeout(chatEntry.timer); }
+  // HITL 审批：需要用户确认时显示审批按钮
+  if (obj.needs_approval) {
+    const promptText = String(obj.approval_prompt || obj.text || '需要确认执行以下操作');
+    const toolName = String(obj.pending_tool || obj.pending_tool_name || '未知工具');
+    appendBubbleRich({
+      kind: 'sys',
+      title: '审批确认',
+      text: promptText + '\n\n工具: ' + toolName,
+      subtitle: '等待审批',
+    });
+    const row = document.createElement('div');
+    row.className = 'msg-row in';
+    const wrap = document.createElement('div');
+    wrap.style.display = 'flex';
+    wrap.style.gap = '8px';
+    wrap.style.marginTop = '4px';
+    const approveBtn = document.createElement('button');
+    approveBtn.textContent = '✅ 确认执行';
+    approveBtn.className = 'btn-lite';
+    approveBtn.onclick = function() { send({ type: 'chat_approve', approved: true }, '审批: 确认'); };
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = '❌ 取消';
+    cancelBtn.className = 'btn-lite';
+    cancelBtn.onclick = function() { send({ type: 'chat_approve', approved: false }, '审批: 取消'); };
+    wrap.appendChild(approveBtn);
+    wrap.appendChild(cancelBtn);
+    row.appendChild(wrap);
+    if (logEl) { logEl.appendChild(row); logEl.scrollTop = logEl.scrollHeight; }
+    return;
+  }
+
+  const rawText = (obj.text ?? obj.message ?? '').toString().trim();
+  const parsedText = parseAgentTextToMarkdown(rawText);
+  const text = parsedText;
+  const markdown = ((obj.markdown ?? obj.md ?? '').toString().trim()) || parsedText;
+  const subtitle = [obj.mode_used, obj.model].filter(Boolean).join(' · ');
+
+  const rawTrace = Array.isArray(obj.decision_trace) ? obj.decision_trace : [];
+  const trace = showDecisionTrace ? rawTrace : [];
+  const routeType = (obj && obj.decision && typeof obj.decision.route === 'string') ? obj.decision.route : '';
+  const traceLines = trace.map((s) => {
+    const layer = (s && s.layer) ? String(s.layer) : 'unknown';
+    const ts = (s && s.ts) ? String(s.ts) : '';
+    const out = (s && Object.prototype.hasOwnProperty.call(s, 'output')) ?
+      (typeof s.output === 'string' ? s.output : JSON.stringify(s.output)) : '';
+    const outShort = out.length > 88 ? `${out.slice(0, 88)}…` : out;
+    return `[${layer}] ${outShort}${ts ? ` ${ts}` : ''}`;
+  });
+
+  const memoryQl = showDecisionTrace ? extractMemoryQueryLimitFromTrace(rawTrace) : null;
+  if (memoryQl) {
+    const q = memoryQl.query ? memoryQl.query : '(全部)';
+    const l = memoryQl.limit ? memoryQl.limit : '-';
+    traceLines.unshift(`[memory] query=${q} · limit=${l}`);
+  }
+
+  const memoryLatest = showDecisionTrace ? extractMemoryLatestBasisFromObservation(obj.observation) : null;
+  if (memoryLatest) {
+    const rowRef = memoryLatest.rowRef ? memoryLatest.rowRef : '-';
+    const selectedAt = memoryLatest.selectedAt ? memoryLatest.selectedAt : '-';
+    const reason = memoryLatest.reason ? memoryLatest.reason : '-';
+    traceLines.unshift(`[memory-latest] row_ref=${rowRef} · selected_at=${selectedAt} · reason=${reason}`);
+  }
+
+  const replayHit = detectMemoryReplayHit(obj.observation, pendingMemoryReplayRowRef);
+  if (showDecisionTrace && replayHit) {
+    traceLines.unshift(`[memory-replay] hit row_ref=${replayHit}`);
+    pendingMemoryReplayRowRef = '';
+  }
+
+  const actions = pickActions(obj);
+  const evidenceRows = extractMemoryEvidenceRows(obj.observation);
+  const replayType = routeType === 'local_memory_summary' ? 'memory_summary' : 'memory_search';
+  let memoryReplayPayload = buildMemoryReplayPayloadFromLatest(obj.observation, routeType);
+
+  if (!memoryReplayPayload && (routeType === 'local_memory_search' || routeType === 'local_memory_summary')) {
+    let fallbackLimit = 20;
+    if (memoryQl && memoryQl.limit) {
+      const n = Number(memoryQl.limit);
+      if (Number.isFinite(n)) fallbackLimit = Math.max(1, Math.min(200, Math.trunc(n)));
+    }
+    const fallbackQuery = memoryQl && typeof memoryQl.query === 'string' ? memoryQl.query : '';
+    memoryReplayPayload = { type: replayType, query: fallbackQuery, limit: fallbackLimit };
+  }
+
+  if (memoryReplayPayload) {
+    if (!memoryReplayPayload.type || (memoryReplayPayload.type !== 'memory_search' && memoryReplayPayload.type !== 'memory_summary')) {
+      memoryReplayPayload.type = replayType;
+    }
+    const replayRowRef = memoryReplayPayload && typeof memoryReplayPayload.query === 'string' ? memoryReplayPayload.query.trim() : '';
+    actions.unshift({ label: '回放该条记忆', payload: memoryReplayPayload, replayRowRef });
+  }
+
+  if (chatEntry && chatEntry.bubble) {
+    // 原地改造 thinking 气泡为回复气泡
+    var box = chatEntry.bubble;
+    box.style.opacity = '1';
+    box.style.fontSize = '';
+    box.style.background = '';
+    box.style.border = '';
+
+    var responseHtml = '<div style="font-weight:700;margin-bottom:6px;color:#2d4f74;font-size:14px">Agent</div>';
+    if (markdown) {
+      responseHtml += '<div>' + renderMarkdownToHtml(markdown) + '</div>';
+    } else {
+      responseHtml += '<div>' + (text || '（无文本内容）') + '</div>';
+    }
+    if (subtitle) {
+      responseHtml += '<div class="sub">' + subtitle + '</div>';
+    }
+    box.innerHTML = responseHtml;
+
+    // 时间放在 bubble 外面（flex container 里），与 appendBubbleRich 结构一致
+    var ts = document.createElement('div');
+    ts.className = 'msg-time';
+    ts.textContent = new Date().toLocaleTimeString();
+    box.parentNode.appendChild(ts);
+
+    delete _thinkingMap[chatCmdId];
+    if (logEl) logEl.scrollTop = logEl.scrollHeight;
+  } else {
+    appendBubbleRich({
+      kind: 'in',
+      title: 'Agent',
+      text: text || (markdown ? '' : '（无文本内容）'),
+      markdown: markdown,
+      subtitle,
+      traceLines,
+      actions,
+      replayHitRowRef: replayHit,
+      evidenceRows,
+    });
+  }
+  return;
+}
+
+if (msgType === 'trace_list') {
+  const traces = Array.isArray(obj.traces) ? obj.traces : [];
+  const lines = [`Trace 历史（最近 ${traces.length} 条）:`];
+  if (traces.length === 0) {
+    lines.push('(无记录)');
+  } else {
+    traces.forEach((t, i) => {
+      const time = (t.created_at || '').substring(0, 19);
+      const sid = (t.session_id || '?').substring(0, 12);
+      const spans = t.num_spans || 0;
+      lines.push(`[${i + 1}] ${time} | ${sid} | ${spans} spans`);
+    });
+  }
+  appendBubbleRich({ kind: 'sys', title: 'Agent', text: lines.join('\n'), subtitle: 'agent-trace' });
+  return;
+}
+
+if (msgType === 'memory_summary_result' || msgType === 'memory_search_result') {
+  const replayHit = detectMemoryReplayHit(obj, pendingMemoryReplayRowRef);
+  const text = msgType === 'memory_summary_result' ? '已返回记忆摘要（结构化结果）。' : '已返回记忆检索结果（结构化结果）。';
+  const traceLines = [];
+  if (showDecisionTrace) {
+    const q = (typeof obj.query === 'string' && obj.query.trim()) ? obj.query.trim() : '(全部)';
+    const l = (typeof obj.limit_applied === 'number' && Number.isFinite(obj.limit_applied)) ? String(obj.limit_applied) : '-';
+    traceLines.push(`[memory] query=${q} · limit=${l}`);
+    if (replayHit) traceLines.unshift(`[memory-replay] hit row_ref=${replayHit}`);
+  }
+  appendBubbleRich({
+    kind: 'in',
+    title: 'Agent',
+    text,
+    subtitle: 'local-agent',
+    traceLines,
+    replayHitRowRef: replayHit,
+    evidenceRows: extractMemoryEvidenceRows(obj),
+  });
+  pendingMemoryReplayRowRef = '';
+  return;
+}
+
+const summary = summarizeIncoming(obj);
+appendBubbleRich({ kind: 'sys', title: summary.title, text: summary.text });
+}
+
+function log(msg, cls='') {
+  appendDebug(msg);
+  const text = String(msg || '').replace(/^\s*(=>|<=)\s*/, '');
+  appendBubbleRich({ kind: cls === 'err' ? 'sys' : 'sys', text });
+}
+
+function summarizeOutgoing(payload = {}) {
+  const t = payload?.type || 'unknown';
+  if (t === 'chat') {
+    return { kind: 'out', title: '我', text: (payload.text || '').toString() };
+  }
+  const labels = {
+    status: '请求状态', ping: '发送 Ping', event_recent: '查询最近事件',
+    memory_recent: '查询最近短期记忆', memory_history: '查询长期记忆历史',
+    memory_search: `检索记忆：${payload.query || '(全部)'}`,
+    memory_summary: `摘要记忆：${payload.query || '(全部)'}`,
+    metrics: '查询运行指标', action: `执行 Action：${payload.action || '-'}`,
+    task_submit: `提交任务：${payload.action || '-'}`, task_get: `查询任务：${payload.task_id || '-'}`,
+    task_list: '查询任务列表', task_cancel: `取消任务：${payload.task_id || '-'}`,
+    task_replay: `重放任务：${payload.task_id || '-'}`, task_audit: `查询审计：${payload.task_id || '-'}`
+  };
+  return { kind: 'out', title: '我', text: labels[t] || `发送 ${t}` };
+}
+
+function mkMeta() {
+  seq += 1;
+  return { cmd_id: `web-cmd-${seq}`, trace_id: 'web-trace-1' };
+}
+
+// ── 后端管理（localStorage）──
+function loadBackends() {
+  try { return JSON.parse(localStorage.getItem('thin_agent_backends') || '[]'); }
+  catch { return []; }
+}
+function saveBackends(list) {
+  localStorage.setItem('thin_agent_backends', JSON.stringify(list));
+}
+function refreshBackendSel() {
+  const sel = document.getElementById('backendSel');
+  const backends = loadBackends();
+  sel.innerHTML = '<option value="">已保存后端...</option>';
+  backends.forEach((b, i) => {
+    sel.innerHTML += `<option value="${i}">${b.name || b.url}</option>`;
+  });
+}
+function saveBackend() {
+  const url = document.getElementById('wsUrl').value.trim();
+  if (!url) return;
+  let backends = loadBackends();
+  const name = prompt('后端名称（如 "家里的服务器"）：', url);
+  if (name === null) return;
+  backends.push({url, name: name || url});
+  saveBackends(backends);
+  refreshBackendSel();
+  log(`已保存后端: ${name || url}`, 'ok');
+}
+function removeBackend() {
+  const sel = document.getElementById('backendSel');
+  const idx = parseInt(sel.value);
+  if (isNaN(idx)) return;
+  let backends = loadBackends();
+  backends.splice(idx, 1);
+  saveBackends(backends);
+  refreshBackendSel();
+  log('已删除后端', 'ok');
+}
+function onBackendSelect() {
+  const sel = document.getElementById('backendSel');
+  const idx = parseInt(sel.value);
+  if (isNaN(idx)) return;
+  const backends = loadBackends();
+  document.getElementById('wsUrl').value = backends[idx].url;
+  connectWs();
+}
+function saveSettings() {
+  localStorage.setItem('thin_agent_autoreconnect',
+    document.getElementById('autoReconnect').checked ? '1' : '0');
+}
+
+// ── 自动重连 ──
+function scheduleReconnect() {
+  if (document.getElementById('autoReconnect').checked === false) return;
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  const delay = Math.min(reconnectDelay * Math.pow(2, reconnectAttempts), MAX_RECONNECT_DELAY);
+  reconnectAttempts++;
+  log(`将在 ${(delay/1000).toFixed(1)}s 后重连...`, 'warn');
+  reconnectTimer = setTimeout(() => {
+    log('正在重连...', 'warn');
+    connectWs();
+  }, delay);
+}
+
+function connectWs() {
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  const url = document.getElementById('wsUrl').value.trim();
+  if (!url) return log('WS URL 不能为空', 'err');
+  ws = new WebSocket(url);
+  ws.onopen = () => {
+    setConn(true, `已连接`);
+    log(`<= 已连接: ${url}`, 'ok');
+    reconnectAttempts = 0;
+    reconnectDelay = 1000;
+  };
+  ws.onclose = () => {
+    setConn(false, '连接已关闭');
+    log('<= 连接已关闭');
+    scheduleReconnect();
+  };
+  ws.onerror = (e) => {
+    setConn(false, '连接错误');
+    log(`<= 连接错误: ${e.message || 'unknown'}`, 'err');
+  };
+  ws.onmessage = (evt) => {
+    try {
+      const obj = JSON.parse(evt.data);
+      if (obj.type === 'task_submit_result' && obj.task && obj.task.task_id) {
+        document.getElementById('taskId').value = obj.task.task_id;
+      }
+      if (obj.type === 'task_replay_result' && obj.data && obj.data.replayed_task_id) {
+        document.getElementById('taskId').value = obj.data.replayed_task_id;
+      }
+      renderIncoming(obj);
+    } catch(e) {
+      console.error('[ws] onmessage error:', e);
+      log(`<= ${evt.data}`);
+    }
+  };
+}
+
+function disconnectWs() {
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  if (ws) ws.close();
+}
+
+// v0.53.27: 会话隔离输入——localStorage 记忆+切换提示
+function onChatIdChange() {
+  const cid = (document.getElementById('chatIdInput') || {}).value || '';
+  const tid = (document.getElementById('threadIdInput') || {}).value || '';
+  try {
+    localStorage.setItem('thin_agent_chat_id', cid);
+    localStorage.setItem('thin_agent_thread_id', tid);
+  } catch (e) {}
+  appendBubbleRich({ kind: 'sys',
+    text: cid.trim() ? '🔁 会话上下文切换为 chat_id=' + cid.trim() + (tid.trim() ? ' thread_id=' + tid.trim() : '') + '（之后的消息走新会话）'
+                     : '🔁 会话上下文恢复默认' });
+}
+(function restoreChatId() {
+  try {
+    const cid = localStorage.getItem('thin_agent_chat_id') || '';
+    const tid = localStorage.getItem('thin_agent_thread_id') || '';
+    if (cid) { const el = document.getElementById('chatIdInput'); if (el) el.value = cid; }
+    if (tid) { const el = document.getElementById('threadIdInput'); if (el) el.value = tid; }
+  } catch (e) {}
+})();
+
+// v0.53.27: 斜杠命令快捷栏+补全（词表与后端 chat_policy slash_commands 对齐）
+const SLASH_CMDS = [
+  { cmd: '/new', desc: '开启新会话（清空上下文）' },
+  { cmd: '/reset', desc: '重置会话并复位熔断/限流' },
+  { cmd: '/clear', desc: '清空对话历史（保留项目上下文）' },
+  { cmd: '/stop', desc: '中断进行中任务' },
+  { cmd: '/compact', desc: '压缩上下文（LLM 摘要）' },
+  { cmd: '/retry', desc: '重试上一条消息' },
+  { cmd: '/status', desc: '会话状态快照' },
+  { cmd: '/model', desc: '模型快照（当前+fast+池）' },
+  { cmd: '/tools', desc: '工具清单' },
+  { cmd: '/sessions', desc: '活跃会话列表' },
+  { cmd: '/help', desc: '命令帮助' },
+];
+
+function sendSlashQuick(cmd) {
+  send({ type: 'chat', text: cmd }, cmd);
+}
+
+// v0.53.27: spawn 子代理派发
+function sendSpawn() {
+  const goal = (document.getElementById('spawnGoal') || {}).value || '';
+  const maxTurns = parseInt((document.getElementById('spawnMaxTurns') || {}).value, 10) || 15;
+  const role = ((document.getElementById('spawnRole') || {}).value || 'researcher').trim() || 'researcher';
+  if (!goal.trim()) { appendBubbleRich({ kind: 'sys', text: '❌ goal 不能为空' }); return; }
+  send({ type: 'spawn_agent', goal: goal.trim(), max_turns: maxTurns, role },
+       '🚀 派发子代理（' + role + '，max_turns=' + maxTurns + '）');
+}
+
+function updateSlashHint() {
+  const ta = document.getElementById('chatText');
+  const hint = document.getElementById('slashHint');
+  if (!ta || !hint) return;
+  const val = ta.value;
+  const firstWord = val.split(' ')[0] || '';
+  if (!firstWord.startsWith('/') || val.includes('\n') || val.includes(' ')) {
+    hint.style.display = 'none';
+    return;
+  }
+  const q = firstWord.slice(1).toLowerCase();
+  const hits = SLASH_CMDS.filter(c => c.cmd.slice(1).toLowerCase().startsWith(q));
+  if (!hits.length) { hint.style.display = 'none'; return; }
+  hint.innerHTML = hits.map((c, i) =>
+    '<div class="slash-hint-row" data-cmd="' + c.cmd + '" style="padding:4px 8px;border-radius:6px;cursor:pointer;display:flex;gap:10px;align-items:baseline;' + (i === 0 ? 'background:#eef4fb;' : '') + '">' +
+    '<b style="color:#2b5290;font-size:12.5px;min-width:72px;">' + c.cmd + '</b>' +
+    '<span style="color:#5d7187;font-size:12px;">' + c.desc + '</span></div>').join('');
+  hint.style.display = 'block';
+  hint.querySelectorAll('.slash-hint-row').forEach(row => {
+    row.onclick = () => {
+      ta.value = row.dataset.cmd;
+      hint.style.display = 'none';
+      sendChat();
+    };
+  });
+}
+
+function applySlashHintSelection() {
+  const hint = document.getElementById('slashHint');
+  const ta = document.getElementById('chatText');
+  if (!hint || hint.style.display === 'none' || !ta) return false;
+  const first = hint.querySelector('.slash-hint-row');
+  if (!first) return false;
+  ta.value = first.dataset.cmd;
+  hint.style.display = 'none';
+  return true;
+}
+
+function send(obj, previewText='') {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    appendBubbleRich({ kind: 'sys', text: '❌ Agent 未连接，消息发送失败' });
+    return false;
+  }
+  const payload = Object.assign({}, obj, mkMeta());
+  // v0.53.27: 会话隔离——chat_id/thread_id 非空时附加（后端按其派生 sid）
+  const cid = (document.getElementById('chatIdInput') || {}).value || '';
+  const tid = (document.getElementById('threadIdInput') || {}).value || '';
+  if (cid.trim()) payload.chat_id = cid.trim();
+  if (tid.trim()) payload.thread_id = tid.trim();
+  try {
+    ws.send(JSON.stringify(payload));
+  } catch(e) {
+    appendBubbleRich({ kind: 'sys', text: '❌ 发送失败: ' + e.message });
+    return false;
+  }
+  appendDebug(`=> ${JSON.stringify(payload)}`);
+
+  if (payload.type === 'memory_search' || payload.type === 'memory_summary') {
+    const replayRowRef = (typeof payload.query === 'string') ? payload.query.trim() : '';
+    pendingMemoryReplayRowRef = replayRowRef;
+  }
+
+  if (previewText) {
+    appendBubbleRich({ kind: 'out', title: '我', text: previewText });
+    // chat 消息：立即创建 Agent 占位气泡 + ●●● 动画
+    if (payload.type === 'chat') {
+      startThinkingPlaceholder(payload.cmd_id);
+    }
+    return true;
+  }
+  const s = summarizeOutgoing(payload);
+  appendBubbleRich(s);
+  return true;
+}
+
+function sendStatus() { send({type:'status'}); }
+function sendPing() { send({type:'ping'}); }
+function sendEventRecent() { send({type:'event_recent'}); }
+function sendMemoryRecent() { send({type:'memory_recent'}); }
+function sendMemoryHistory() { send({type:'memory_history', limit: 20}); }
+function sendMemorySearch() { send({type:'memory_search', query: 'memory-search-token-v0639', limit: 20}); }
+function sendMemorySummary() { send({type:'memory_summary', query: 'memory-search-token-v0639', limit: 20}); }
+function sendMetrics() { send({type:'metrics'}); }
+
+// v0.53.25: 实时状态卡——每 5s 轮询 /stats（HTTP：断连也能查进程级状态）
+const LIVE_REFRESH_MS = 5000;
+let liveStatsTimer = null;
+let liveStatsOk = false;
+
+function fmtUptime(sec) {
+  if (sec < 60) return sec + 's';
+  if (sec < 3600) return Math.floor(sec/60) + 'm' + (sec%60) + 's';
+  const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60);
+  return h + 'h' + m + 'm';
+}
+
+function renderLiveStats(j) {
+  const card = document.getElementById('liveStatsCard');
+  if (!card) return;
+  const meta = document.getElementById('liveStatsMeta');
+  const rows = [];
+  const ver = j.version || '?';
+  const up = fmtUptime(j.uptime_seconds || 0);
+  const usage = j.usage || {};
+  const wsInfo = j.ws || {};
+  const circuit = Array.isArray(j.circuit) ? j.circuit : [];
+  const sessions = j.sessions || {};
+  const anyOpen = circuit.some(c => c.open);
+  const anyHalf = circuit.some(c => c.half_open && !c.open);
+  // 连接行（客户端本地态）
+  const wsState = (ws && ws.readyState === 1) ? '已连接' : '未连接';
+  const wsColor = (ws && ws.readyState === 1) ? '#5ce8a4' : '#ff8f8f';
+  // 熔断行（三色）
+  let cbHtml;
+  if (!circuit.length) {
+    cbHtml = '<span style="color:#5ce8a4;">● 正常（无熔断记录）</span>';
+  } else if (anyOpen) {
+    const o = circuit.find(c => c.open) || {};
+    const rem = Math.ceil((o.cooldown_remaining_ms || 0) / 1000);
+    cbHtml = '<span style="color:#ff8f8f;font-weight:650;">● 熔断开启</span> <span style="color:#b7cde6;">' +
+             String(o.endpoint || '').slice(0, 42) + ' 冷却≈' + rem + 's</span>';
+  } else if (anyHalf) {
+    cbHtml = '<span style="color:#ffc266;">● 半开（探测中）</span>';
+  } else {
+    const worst = circuit.reduce((a, c) => Math.max(a, c.consecutive_failures || 0), 0);
+    cbHtml = '<span style="color:#5ce8a4;">● 正常</span> <span style="color:#b7cde6;">连续失败峰值 ' + worst + '</span>';
+  }
+  const LBL = 'color:#8fb0d6;width:76px;display:inline-block;';
+  const VAL = 'color:#ffffff;font-weight:650;';
+  rows.push('<span style="' + LBL + '">服务</span><span style="' + VAL + '">' + ver + '</span> <span style="color:#b7cde6;">· 运行 ' + up + '</span>');
+  rows.push('<span style="' + LBL + '">WS 连接</span><span style="color:' + wsColor + ';font-weight:650;">' + wsState + '</span>' +
+            ' <span style="color:#b7cde6;">· 队列 <span style="' + VAL + '">' + (wsInfo.queue_depth ?? '-') + '</span>/' + (wsInfo.queue_capacity ?? '-') +
+            ' · worker <span style="' + VAL + '">' + (wsInfo.workers ?? '-') + '</span></span>');
+  rows.push('<span style="' + LBL + '">熔断器</span>' + cbHtml);
+  rows.push('<span style="' + LBL + '">会话</span><span style="' + VAL + '">' + (sessions.active ?? '-') + '</span> <span style="color:#b7cde6;">活跃 · tokens ' +
+            (((usage.total_tokens ?? 0)/1000).toFixed(1)) + 'k · API 调用 <span style="' + VAL + '">' + (usage.api_calls ?? 0) + '</span></span>');
+  card.innerHTML = rows.join('<br>');
+  if (meta) {
+    const t = new Date();
+    meta.textContent = liveStatsOk
+      ? ('每 5s 刷新 · ' + t.toTimeString().slice(0,8))
+      : '每 5s 刷新 · 服务不可达';
+    meta.style.color = liveStatsOk ? '#8a99a8' : '#c33';
+  }
+}
+
+function liveStatsBase() {
+  // 与 fetchOpsStats 同款：从 WS URL 推导 HTTP 基址
+  const wsUrl = (document.getElementById('wsUrl') || {}).value || '';
+  const m = wsUrl.match(/^wss?:\/\/([^/]+)/);
+  if (!m) return null;
+  return (wsUrl.startsWith('wss') ? 'https' : 'http') + '://' + m[1];
+}
+
+async function refreshLiveStats() {
+  try {
+    const base = liveStatsBase();
+    if (!base) throw new Error('后端 URL 未配置');
+    // v0.53.36: 继承 wsUrl 的 ?token= ——v0.53.32 鉴权后 /stats 无 token 401
+    const hdrs = {};
+    const tm = (document.getElementById('wsUrl').value.match(/[?&]token=([^&]+)/));
+    if (tm) hdrs['Authorization'] = 'Bearer ' + decodeURIComponent(tm[1]);
+    const r = await fetch(base + '/stats', { headers: hdrs, signal: AbortSignal.timeout(3000) });
+    if (!r.ok) throw new Error('http ' + r.status);
+    const j = await r.json();
+    liveStatsOk = true;
+    renderLiveStats(j);
+  } catch (e) {
+    liveStatsOk = false;
+    const card = document.getElementById('liveStatsCard');
+    if (card && !card.dataset.manual) {
+      card.innerHTML = '<div style="color:#ff8f8f;">服务不可达（' + String(e.message || e).slice(0, 60) + '）<br><span style="color:#b7cde6;">仍在每 5s 重试…</span></div>';
+    }
+    const meta = document.getElementById('liveStatsMeta');
+    if (meta) { meta.textContent = '每 5s 刷新 · 服务不可达'; meta.style.color = '#c33'; }
+  }
+}
+
+function startLiveStats() {
+  if (liveStatsTimer) return;
+  refreshLiveStats();
+  liveStatsTimer = setInterval(refreshLiveStats, LIVE_REFRESH_MS);
+}
+startLiveStats();
+
+// v0.53.27: 斜杠快捷栏+补全绑定
+(function bindSlash() {
+  document.querySelectorAll('.slash-quick').forEach(btn => {
+    btn.onclick = () => sendSlashQuick(btn.dataset.cmd);
+  });
+  const ta = document.getElementById('chatText');
+  if (ta) {
+    ta.addEventListener('input', updateSlashHint);
+    ta.addEventListener('keydown', (e) => {
+      const hint = document.getElementById('slashHint');
+      const active = hint && hint.style.display === 'block';
+      if (e.key === 'Tab' && active) {
+        e.preventDefault();
+        applySlashHintSelection();
+      } else if (e.key === 'Escape' && active) {
+        hint.style.display = 'none';
+      }
+    });
+    ta.addEventListener('blur', () => {
+      setTimeout(() => {
+        const hint = document.getElementById('slashHint');
+        if (hint) hint.style.display = 'none';
+      }, 180);
+    });
+  }
+})();
+
+// v0.51.0: /stats 运维统计面板 — fetch HTTP 口（不走 WS，服务在即可查）
+function fetchOpsStats() {
+  const panel = document.getElementById('opsStatsPanel');
+  // 从 WS URL 推导 HTTP 基址（ws://host:port/ws → http://host:port）
+  const wsUrl = document.getElementById('wsUrl').value.trim();
+  const m = wsUrl.match(/^wss?:\/\/([^/]+)/);
+  if (!m) { panel.innerHTML = '<span style="color:#c0392b">后端 URL 无法解析</span>'; return; }
+  const base = (wsUrl.startsWith('wss') ? 'https' : 'http') + '://' + m[1];
+  fetch(base + '/stats')
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(j => {
+      const fmt = n => (n === undefined || n === null) ? '—' : String(n);
+      const row = (k, v) => '<div><span style="color:#607487">' + k + '：</span>' + v + '</div>';
+      panel.innerHTML =
+        row('版本', fmt(j.version)) +
+        row('运行时长', fmt(j.uptime_seconds) + ' 秒') +
+        row('API 调用', fmt(j.usage && j.usage.api_calls)) +
+        row('Token 用量', '输入 ' + fmt(j.usage && j.usage.prompt_tokens) +
+            ' / 输出 ' + fmt(j.usage && j.usage.completion_tokens) +
+            ' / 合计 ' + fmt(j.usage && j.usage.total_tokens)) +
+        row('缓存', '命中 ' + fmt(j.cache && j.cache.hits) +
+            ' / 未命中 ' + fmt(j.cache && j.cache.misses) +
+            ' / 命中率 ' + fmt(j.cache && j.cache.hit_rate)) +
+        row('Cron 任务', '总数 ' + fmt(j.cron && j.cron.total) +
+            ' / 启用 ' + fmt(j.cron && j.cron.enabled));
+    })
+    .catch(e => {
+      panel.innerHTML = '<span style="color:#c0392b">获取失败：' + e.message +
+        '（服务未启动或版本 < v0.50.8）</span>';
+    });
+}
+
+function sendChat() {
+  const el = document.getElementById('chatText');
+  // v0.53.27: 斜杠补全激活且输入为纯命令前缀 → Enter=选中首项（不发送）
+  const hintEl = document.getElementById('slashHint');
+  if (hintEl && hintEl.style.display === 'block' &&
+      el.value.startsWith('/') && !el.value.includes(' ')) {
+    applySlashHintSelection();
+    return;
+  }
+  const text = el.value.trim();
+  if (!text) return log('<= chat 不能为空', 'err');
+  send({type:'chat', text}, text);
+  el.value = '';
+  el.focus();
+}
+
+function parseJsonInput(id) {
+  const txt = document.getElementById(id).value.trim() || '{}';
+  return JSON.parse(txt);
+}
+
+function sendAction() {
+  const action = document.getElementById('actionName').value;
+  try {
+    const args = parseJsonInput('actionArgs');
+    send({type:'action', action, args});
+  } catch (e) {
+    log(`<= args JSON 解析失败: ${e}`, 'err');
+  }
+}
+
+function sendTaskSubmit() {
+  const action = document.getElementById('taskAction').value;
+  const idem = document.getElementById('idemKey').value.trim();
+  try {
+    const args = parseJsonInput('taskArgs');
+    send({type:'task_submit', action, args, idempotency_key: idem});
+  } catch (e) {
+    log(`<= task args JSON 解析失败: ${e}`, 'err');
+  }
+}
+
+function sendTaskGet() {
+  const task_id = document.getElementById('taskId').value.trim();
+  if (!task_id) return log('<= 请先填写 task_id', 'err');
+  send({type:'task_get', task_id});
+}
+
+function sendTaskList() {
+  send({type:'task_list', limit: 20});
+}
+
+function sendTaskListFiltered() {
+  const state = document.getElementById('listStateFilter').value.trim();
+  const action = document.getElementById('listActionFilter').value.trim();
+  const payload = {type:'task_list', limit: 20};
+  if (state) payload.state = state;
+  if (action) payload.action = action;
+  send(payload);
+}
+
+function sendTaskCancel() {
+  const task_id = document.getElementById('taskId').value.trim();
+  if (!task_id) return log('<= 请先填写 task_id', 'err');
+  const reason = document.getElementById('cancelReason').value.trim() || 'user cancel';
+  send({type:'task_cancel', task_id, reason});
+}
+
+function sendTaskReplay() {
+  const task_id = document.getElementById('taskId').value.trim();
+  if (!task_id) return log('<= 请先填写 task_id', 'err');
+  const idem = (document.getElementById('idemKey').value.trim() || 'demo-idem') + '-replay';
+  send({type:'task_replay', task_id, idempotency_key: idem});
+}
+
+function sendTaskAudit() {
+  const task_id = document.getElementById('taskId').value.trim();
+  if (!task_id) return log('<= 请先填写 task_id', 'err');
+  const limit = Number(document.getElementById('auditLimit').value || '20');
+  send({type:'task_audit', task_id, limit});
+}
+
+// Chat快捷键：Enter发送，Shift+Enter换行
+(function bindChatHotkeys() {
+  const el = document.getElementById('chatText');
+  if (!el) return;
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendChat();
+    }
+  });
+
+  // 恢复设置
+  refreshBackendSel();
+  if (localStorage.getItem('thin_agent_autoreconnect') === '0') {
+    document.getElementById('autoReconnect').checked = false;
+  }
+})();
+
+// ── WebView 模式：调试按钮由 C++ kInitJS 在 DOMContentLoaded 时隐藏 ──
+// 这里不需要再做任何事。C++ 注入是唯一可靠的控制点。
+
+</script>
+</body>
+</html>

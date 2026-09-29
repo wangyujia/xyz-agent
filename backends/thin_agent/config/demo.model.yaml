@@ -1,0 +1,377 @@
+# thin_agent 模型与运行配置（x86 demo / 云联调）
+#
+# 加载方式：
+#   - WS 服务：thin_agent --config config/demo.model.yaml --profile <name>
+#   - 代码：load_demo_profile_compat(path, profile)  → DemoConfigCompat（完整）
+#           load_demo_profile(path, profile)         → ModelConfig（基础字段）
+#
+# 安全：勿在仓库写入真实 API Key；通过 api_key_env 指定环境变量名注入。
+#
+# profile 选用建议：
+#   offline_demo        — 纯本地，无云调用
+#   cloud_mock_demo     — 本地 mock 云（127.0.0.1:18080）
+#   zai_fast_demo       — 智谱 GLM 快通道 glm-4.5-flash（需 GLM_API_KEY）
+#   zai_main_demo       — 智谱 GLM 主力模型 glm-5.2（需 GLM_API_KEY）
+#
+# 对话策略（关键词/模板/槽位）见 config/chat_policy.json
+# 可用 THIN_AGENT_CHAT_POLICY_PATH 覆盖策略文件路径。
+
+model:
+  # 运行模式：offline | cloud | auto
+  mode: offline
+
+  # 云提供商：github-copilot | deepseek | openai-compatible | lmstudio
+  # lmstudio（v0.53.34）= 本地推理（LM Studio 等 OpenAI 兼容本地端点），
+  # 默认 http://127.0.0.1:1234/v1（api_base 可覆盖）；无需 API key。
+  # 示例：
+  #   provider: lmstudio
+  #   name: qwen3.5-27b-mlx    # LM Studio 加载的模型 ID（lmstudio run 时显示）
+  #   api_key_env: ""           # 本地推理无需 key
+  provider: ""
+
+  # 模型 ID（各 provider 自有命名）
+  name: ""
+
+  # OpenAI 兼容 API 根地址（不含 /chat/completions）
+  api_base: ""
+
+  # API Key 环境变量名（运行时 getenv）
+  api_key_env: ""
+
+  request_timeout_ms: 15000
+
+  # 云失败回退：offline | cloud
+  fallback: offline
+
+  # 预算门控（0 = 不启用）
+  budget_max_input_chars: 0
+  budget_max_latency_ms: 0
+  budget_max_cost_cents: 0
+
+  # 复杂意图（含如果/然后等）是否强制走云策略
+  complex_intent_force_cloud: false
+
+  # 任务流水线失败时是否触发回滚钩子
+  pipeline_enable_rollback_hook: false
+
+  # 外部信息查询：mock（内置）| http（真实 HTTP，如 wttr.in）
+  external_provider: mock
+
+  # 天气 API URL 模板，占位符 {city} {date}；空则走 provider 默认
+  external_weather_url: ""
+
+profiles:
+  offline_demo:
+    mode: offline
+    provider: ""
+    name: ""
+    api_base: ""
+    api_key_env: ""
+    request_timeout_ms: 15000
+    fallback: offline
+    budget_max_input_chars: 0
+    budget_max_latency_ms: 0
+    budget_max_cost_cents: 0
+    complex_intent_force_cloud: false
+    pipeline_enable_rollback_hook: false
+    external_provider: mock
+
+  copilot_demo:
+    mode: auto
+    provider: github-copilot
+    name: gpt-4.1
+    api_base: ""
+    api_key_env: COPILOT_API_KEY
+    request_timeout_ms: 15000
+    fallback: offline
+    budget_max_input_chars: 0
+    budget_max_latency_ms: 0
+    budget_max_cost_cents: 0
+    complex_intent_force_cloud: false
+    pipeline_enable_rollback_hook: false
+    external_provider: mock
+
+  deepseek_demo:
+    mode: auto
+    provider: deepseek
+    name: deepseek-flash
+    api_base: "https://api.deepseek.com"
+    api_key_env: DEEPSEEK_API_KEY
+    request_timeout_ms: 60000
+    fallback: offline
+    budget_max_input_chars: 0
+    budget_max_latency_ms: 0
+    budget_max_cost_cents: 0
+    complex_intent_force_cloud: false
+    pipeline_enable_rollback_hook: false
+    external_provider: mock
+
+  # 通用 OpenAI 兼容网关（私有代理 / 自建）
+  openai_compatible_demo:
+    mode: cloud
+    provider: openai-compatible
+    name: custom-model
+    api_base: "https://your-gateway.example.com/v1"
+    api_key_env: OPENAI_COMPAT_API_KEY
+    request_timeout_ms: 15000
+    fallback: offline
+    budget_max_input_chars: 0
+    budget_max_latency_ms: 0
+    budget_max_cost_cents: 0
+    complex_intent_force_cloud: false
+    pipeline_enable_rollback_hook: false
+    external_provider: mock
+
+  # 本地 mock 云（E2E / 单测 CLOUD_RESPONSE 注入）
+  cloud_mock_demo:
+    mode: cloud
+    provider: openai-compatible
+    name: mock-model
+    api_base: "http://127.0.0.1:18080/v1"
+    api_key_env: THIN_AGENT_CLOUD_TEST_KEY
+    request_timeout_ms: 5000
+    fallback: offline
+    budget_max_input_chars: 0
+    budget_max_latency_ms: 0
+    budget_max_cost_cents: 0
+    complex_intent_force_cloud: false
+    pipeline_enable_rollback_hook: false
+    external_provider: mock
+
+  # DeepSeek（腾讯 TokenHub 网关，与 Hermes 会话同款）— 快通道
+  # deepseek-v4-flash-202605（轻量快速，意图分类 + 短回复）
+  # v0.52.25: 上下文窗口显式覆盖（0/缺省=按模型名推断：glm=128k/deepseek=64k/
+  # claude=200k/qwen=131072/未知 32k 保守）。FC 中间压缩触发点依据。
+  # context_window_tokens: 128000
+
+  # 切换回 GLM：脚本加 --glm（见 run_agent.sh），或改 --fast 映射
+  deepseek_fast_demo:
+    mode: cloud
+    provider: openai-compatible
+    name: deepseek-flash
+    api_base: "https://api.deepseek.com"
+    api_key_env: DEEPSEEK_API_KEY
+    request_timeout_ms: 150000  # GLM coding 端点慢(reasoning模型,实测48s+),150s
+    max_completion_tokens: 8192  # 思考型reasoning与content共享预算,2048易耗尽content空
+    fallback: offline
+    budget_max_input_chars: 0
+    budget_max_latency_ms: 0
+    budget_max_cost_cents: 0
+    complex_intent_force_cloud: false
+    pipeline_enable_rollback_hook: false
+    external_provider: mock
+
+  # DeepSeek 官方直连（模型 deepseek-flash = 当前会话所用）— 主力模型
+  # v0.53.95: 原为腾讯 TokenHub 网关 + 模型名 deepseek-v4-flash-202605，
+  # 该模型名已被 DeepSeek 判为非法（实测 HTTP 400：「supported API model names are
+  # deepseek-flash, deepseek-v4-pro」），故统一改为官方直连 + deepseek-flash。
+  deepseek_main_demo:
+    mode: cloud
+    provider: openai-compatible
+    name: deepseek-flash
+    api_base: "https://api.deepseek.com"
+    api_key_env: DEEPSEEK_API_KEY
+    request_timeout_ms: 150000  # GLM coding 端点慢(reasoning模型,实测48s+),150s
+    max_completion_tokens: 8192  # 思考型reasoning与content共享预算,2048易耗尽content空
+    fallback: offline
+    budget_max_input_chars: 0
+    budget_max_latency_ms: 0
+    budget_max_cost_cents: 0
+    complex_intent_force_cloud: false
+    pipeline_enable_rollback_hook: false
+    external_provider: mock
+
+  # 智谱 AI（Z.AI / GLM）— OpenAI 兼容（**备份通道**，--glm 才走）
+  # 注意：本机 GLM_API_KEY 已过期（HTTP 401「令牌已过期」），日常/默认走 deepseek-*
+  zai_fast_demo:
+    mode: cloud
+    provider: openai-compatible
+    name: glm-4.5-flash
+    api_base: "https://open.bigmodel.cn/api/coding/paas/v4"
+    api_key_env: GLM_API_KEY
+    request_timeout_ms: 150000  # GLM coding 端点慢(reasoning模型,实测48s+),150s
+    max_completion_tokens: 8192  # 思考型reasoning与content共享预算,2048易耗尽content空
+    fallback: offline
+    budget_max_input_chars: 0
+    budget_max_latency_ms: 0
+    budget_max_cost_cents: 0
+    complex_intent_force_cloud: false
+    pipeline_enable_rollback_hook: false
+    external_provider: mock
+
+  # LM Studio 本地推理（v0.53.34）——OpenAI 兼容本地端点,无需 key
+  # LM Studio 启动并 load 模型后: thin_agent --profile lmstudio_demo
+  # name/api_base 留空=默认(LM Studio 当前加载的模型 / 127.0.0.1:1234/v1)
+  lmstudio_demo:
+    mode: cloud
+    provider: lmstudio
+    name: ""
+    api_base: ""
+    api_key_env: ""
+    request_timeout_ms: 120000
+    max_completion_tokens: 8192
+    fallback: offline
+    budget_max_input_chars: 0
+    budget_max_latency_ms: 0
+    budget_max_cost_cents: 0
+    complex_intent_force_cloud: false
+    pipeline_enable_rollback_hook: false
+    external_provider: mock
+
+  # 智谱 AI（Z.AI / GLM）— 主力模型
+  # glm-5.2（深度推理 + Native Function Calling）
+  zai_main_demo:
+    mode: cloud
+    provider: openai-compatible
+    name: glm-5.2
+    api_base: "https://open.bigmodel.cn/api/coding/paas/v4"
+    api_key_env: GLM_API_KEY
+    request_timeout_ms: 150000  # GLM coding 端点慢(reasoning模型,实测48s+),150s
+    max_completion_tokens: 8192  # 思考型reasoning与content共享预算,2048易耗尽content空
+    fallback: offline
+    budget_max_input_chars: 0
+    budget_max_latency_ms: 0
+    budget_max_cost_cents: 0
+    complex_intent_force_cloud: false
+    pipeline_enable_rollback_hook: false
+    external_provider: duckduckgo
+
+  # ── cloud_only 变体：--cloud-only 时由 run_agent.sh 映射 ──
+  # 与对应 base profile 相同，仅 fallback 非 offline（云失败不降级本地）    # v0.53.14: FC/文本双链 fallback——glm-5.2 容量态自动降 flash（慢但出结果>超时失败）
+    cloud_providers:
+      - provider: openai-compatible
+        name: glm-5.2
+        api_base: "https://open.bigmodel.cn/api/coding/paas/v4"
+        api_key_env: GLM_API_KEY
+        request_timeout_ms: 150000
+        max_completion_tokens: 8192
+      - provider: openai-compatible
+        name: glm-4.5-flash
+        api_base: "https://open.bigmodel.cn/api/coding/paas/v4"
+        api_key_env: GLM_API_KEY
+        request_timeout_ms: 150000
+        max_completion_tokens: 8192
+
+  deepseek_fast_cloud_only:
+    mode: cloud
+    provider: openai-compatible
+    name: deepseek-flash
+    api_base: "https://api.deepseek.com"
+    api_key_env: DEEPSEEK_API_KEY
+    request_timeout_ms: 150000  # GLM coding 端点慢(reasoning模型,实测48s+),150s
+    max_completion_tokens: 8192  # 思考型reasoning与content共享预算,2048易耗尽content空
+    fallback: cloud
+    budget_max_input_chars: 0
+    budget_max_latency_ms: 0
+    budget_max_cost_cents: 0
+    complex_intent_force_cloud: false
+    pipeline_enable_rollback_hook: false
+    external_provider: mock
+
+  deepseek_main_cloud_only:
+    mode: cloud
+    provider: openai-compatible
+    name: deepseek-flash
+    api_base: "https://api.deepseek.com"
+    api_key_env: DEEPSEEK_API_KEY
+    request_timeout_ms: 150000  # GLM coding 端点慢(reasoning模型,实测48s+),150s
+    max_completion_tokens: 8192  # 思考型reasoning与content共享预算,2048易耗尽content空
+    fallback: cloud
+    budget_max_input_chars: 0
+    budget_max_latency_ms: 0
+    budget_max_cost_cents: 0
+    complex_intent_force_cloud: false
+    pipeline_enable_rollback_hook: false
+    external_provider: mock
+
+  zai_fast_cloud_only:
+    mode: cloud
+    provider: openai-compatible
+    name: glm-4.5-flash
+    api_base: "https://open.bigmodel.cn/api/coding/paas/v4"
+    api_key_env: GLM_API_KEY
+    request_timeout_ms: 150000  # GLM coding 端点慢(reasoning模型,实测48s+),150s
+    max_completion_tokens: 8192  # 思考型reasoning与content共享预算,2048易耗尽content空
+    fallback: cloud
+    budget_max_input_chars: 0
+    budget_max_latency_ms: 0
+    budget_max_cost_cents: 0
+    complex_intent_force_cloud: false
+    pipeline_enable_rollback_hook: false
+    external_provider: mock
+
+  zai_main_cloud_only:
+    mode: cloud
+    provider: openai-compatible
+    name: glm-5.2
+    api_base: "https://open.bigmodel.cn/api/coding/paas/v4"
+    api_key_env: GLM_API_KEY
+    request_timeout_ms: 150000  # GLM coding 端点慢(reasoning模型,实测48s+),150s
+    max_completion_tokens: 8192  # 思考型reasoning与content共享预算,2048易耗尽content空
+    fallback: cloud
+    budget_max_input_chars: 0
+    budget_max_latency_ms: 0
+    budget_max_cost_cents: 0
+    complex_intent_force_cloud: false
+    pipeline_enable_rollback_hook: false
+    external_provider: mock
+
+  # 多源 fallback 示例：先试智谱 GLM，不可用再试 OpenRouter Claude
+  multi_provider_demo:
+    mode: cloud
+    provider: ""  # 忽略，使用 cloud_providers 列表
+    name: ""
+    api_base: ""
+    api_key_env: ""
+    request_timeout_ms: 20000
+    fallback: offline
+    cloud_providers:
+      - provider: openai-compatible
+        name: glm-5.2
+        api_base: "https://open.bigmodel.cn/api/coding/paas/v4"
+        api_key_env: GLM_API_KEY
+        request_timeout_ms: 150000  # GLM coding 端点慢(reasoning模型,实测48s+),150s
+        max_completion_tokens: 8192  # 思考型reasoning与content共享预算,2048易耗尽content空
+      - provider: openai-compatible
+        name: anthropic/claude-sonnet-4
+        api_base: "https://openrouter.ai/api/v1"
+        api_key_env: OPENROUTER_API_KEY
+        request_timeout_ms: 20000
+    budget_max_input_chars: 0
+    budget_max_latency_ms: 0
+    budget_max_cost_cents: 0
+    complex_intent_force_cloud: false
+    pipeline_enable_rollback_hook: false
+    external_provider: mock
+
+  # v0.47.4: 实用模型链 — DeepSeek 主力 → GLM 兜底
+  # DeepSeek（TokenHub 网关）失败/超时 → 自动切 GLM-4.5-flash
+  # 两个 provider 均有 key，开箱即用。脚本 --chain 加载此 profile。
+  chain_ds_glm_demo:
+    mode: cloud
+    provider: ""
+    name: ""
+    api_base: ""
+    api_key_env: ""
+    request_timeout_ms: 150000  # GLM coding 端点慢(reasoning模型,实测48s+),150s
+    max_completion_tokens: 8192  # 思考型reasoning与content共享预算,2048易耗尽content空
+    fallback: offline
+    cloud_providers:
+      - provider: openai-compatible
+        name: deepseek-flash
+        api_base: "https://api.deepseek.com"
+        api_key_env: DEEPSEEK_API_KEY
+        request_timeout_ms: 150000  # GLM coding 端点慢(reasoning模型,实测48s+),150s
+        max_completion_tokens: 8192  # 思考型reasoning与content共享预算,2048易耗尽content空
+      - provider: openai-compatible
+        name: glm-4.5-flash
+        api_base: "https://open.bigmodel.cn/api/coding/paas/v4"
+        api_key_env: GLM_API_KEY
+        request_timeout_ms: 150000  # GLM coding 端点慢(reasoning模型,实测48s+),150s
+        max_completion_tokens: 8192  # 思考型reasoning与content共享预算,2048易耗尽content空
+    budget_max_input_chars: 0
+    budget_max_latency_ms: 0
+    budget_max_cost_cents: 0
+    complex_intent_force_cloud: false
+    pipeline_enable_rollback_hook: false
+    external_provider: mock

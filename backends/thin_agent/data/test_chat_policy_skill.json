@@ -1,0 +1,734 @@
+{
+  "version": 1,
+  "skills": {
+    "system_ops": {
+      "enabled": true,
+      "name": "系统操作",
+      "desc": "文件读写、代码搜索、目录查看",
+      "actions": [
+        {
+          "name": "read_file",
+          "desc": "读取指定文件的完整内容（文本）。当你需要查看、显示、列出文件内容时使用此工具。参数 path 必须是文件的完整路径（不是目录、不是通配符）。",
+          "params": {
+            "path": "文件的完整路径（如 /etc/hostname、/tmp/test.txt）"
+          },
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        },
+        {
+          "name": "write_file",
+          "desc": "创建或覆盖写入文件。当你需要创建新文件、把内容保存到文件时使用此工具。参数 path 是文件完整路径，content 是要写入的文本内容。",
+          "params": {
+            "path": "文件的完整路径（如 /tmp/new_file.txt）",
+            "content": "要写入文件的文本内容"
+          },
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        },
+        {
+          "name": "search_code",
+          "desc": "在文件内容中搜索文本（grep 语义）。递归扫描目录下所有文件的内容，返回包含指定关键词的行。用于查找变量名、函数名、字符串常量在代码中的位置。注意：搜索的是文件内容，不是文件名。",
+          "params": {
+            "pattern": "要在文件内容中搜索的文本或关键词（如 kThinAgentVersion）",
+            "dir": "搜索的目录路径（默认当前目录）"
+          },
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        },
+        {
+          "name": "search_files",
+          "desc": "按文件名通配符查找文件路径（find 语义）。只返回匹配的文件名列表，不读取文件内容。用于查找文件在哪里、有哪些 .cpp 文件等。注意：此工具只搜索文件名，不搜索文件内容；如果需要查看文件内容请用 read_file。",
+          "params": {
+            "pattern": "文件名通配符模式（如 *.cpp、*.h、Version*、test_*.txt）",
+            "dir": "搜索的目录路径（默认当前目录）",
+            "max_results": "最大结果数（默认50）"
+          },
+          "handlers": {
+            "android": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "ios": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "linux": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "macos": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "windows": {
+              "cmd": "",
+              "type": "cpp"
+            }
+          }
+        },
+        {
+          "name": "list_dir",
+          "desc": "列出目录下的文件和子目录（ls 语义）。当你需要查看某个目录里有什么文件时使用此工具。注意：此工具列出的文件名不能看到文件内容，如需查看内容请用 read_file。",
+          "params": {
+            "dir": "目录路径（如 /tmp、/root/code）"
+          },
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        },
+        {
+          "name": "shell_exec",
+          "desc": "执行白名单内的 shell 命令",
+          "params": {
+            "command": "要执行的命令"
+          },
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        },
+        {
+          "name": "process",
+          "desc": "管理后台进程：poll(轮询状态)/wait(等待完成)/kill(终止)/write(写入stdin)",
+          "desc_en": "manage background processes: poll/wait/kill/write to stdin",
+          "params": [
+            {
+              "name": "action",
+              "type": "string",
+              "desc": "操作：poll/wait/kill/write"
+            },
+            {
+              "name": "session_id",
+              "type": "string",
+              "desc": "后台进程会话ID（由shell_exec background=true返回）"
+            }
+          ],
+          "optional": [
+            "session_id"
+          ],
+          "keywords": [
+            "process",
+            "进程",
+            "后台",
+            "background",
+            "poll",
+            "wait",
+            "kill"
+          ]
+        },
+        {
+          "name": "workflow_list",
+          "desc": "列出所有可用工作流",
+          "params": {},
+          "handlers": {
+            "android": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "ios": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "linux": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "macos": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "windows": {
+              "cmd": "",
+              "type": "cpp"
+            }
+          }
+        },
+        {
+          "name": "workflow_view",
+          "desc": "查看指定工作流详情",
+          "params": {
+            "name": "工作流名称"
+          },
+          "handlers": {
+            "android": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "ios": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "linux": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "macos": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "windows": {
+              "cmd": "",
+              "type": "cpp"
+            }
+          }
+        },
+        {
+          "name": "workflow_create",
+          "desc": "创建新工作流",
+          "params": {
+            "name": "名称",
+            "description": "描述",
+            "domain": "领域",
+            "steps": "[{desc, cmd}]步骤数组"
+          },
+          "handlers": {
+            "android": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "ios": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "linux": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "macos": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "windows": {
+              "cmd": "",
+              "type": "cpp"
+            }
+          }
+        },
+        {
+          "name": "workflow_set",
+          "desc": "切换到指定工作流",
+          "params": {
+            "name": "工作流名称"
+          },
+          "handlers": {
+            "android": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "ios": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "linux": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "macos": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "windows": {
+              "cmd": "",
+              "type": "cpp"
+            }
+          }
+        },
+        {
+          "name": "workflow_delete",
+          "desc": "删除工作流",
+          "params": {
+            "name": "工作流名称"
+          },
+          "handlers": {
+            "android": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "ios": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "linux": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "macos": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "windows": {
+              "cmd": "",
+              "type": "cpp"
+            }
+          }
+        },
+        {
+          "name": "workflow_run",
+          "desc": "执行工作流步骤（编译/测试等），失败时返回结构化错误含 retry 计数，调用方递增 retry 参数即可重试",
+          "params": {
+            "name": "工作流名称（如 cpp-cmake / python-pytest / generic）",
+            "retry": "当前重试次数，从 1 开始，每次失败后 +1 再调用（默认 1）",
+            "project_dir": "项目根目录（可选）"
+          },
+          "handlers": {
+            "android": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "ios": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "linux": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "macos": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "windows": {
+              "cmd": "",
+              "type": "cpp"
+            }
+          }
+        }
+      ]
+    },
+    "media_ops": {
+      "enabled": true,
+      "name": "媒体操作",
+      "desc": "拍照、录像",
+      "actions": [
+        {
+          "name": "capture_photo",
+          "desc": "拍摄照片",
+          "params": {
+            "count": "数量(1-9)"
+          },
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        },
+        {
+          "name": "start_recording",
+          "desc": "开始录像",
+          "params": {
+            "mode": "normal/video/audio",
+            "duration_sec": "时长(秒)"
+          },
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        },
+        {
+          "name": "stop_recording",
+          "desc": "停止录像",
+          "params": {},
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        }
+      ]
+    }
+  },
+  "whitelist": {
+    "common_rules": {
+      "max_output_bytes": 65536,
+      "max_exec_seconds": 30,
+      "forbid_patterns": [
+        "$(",
+        "sudo",
+        "rm -rf /",
+        "rm -rf ~",
+        "dd ",
+        "chmod",
+        "chown",
+        "mkfs",
+        "mount"
+      ]
+    },
+    "linux": [
+      "cat",
+      "grep",
+      "find",
+      "ls",
+      "head",
+      "tail",
+      "wc",
+      "mkdir",
+      "cp",
+      "mv",
+      "echo",
+      "file",
+      "du",
+      "ps",
+      "uname",
+      "sleep",
+      "date",
+      "time",
+      "pwd",
+      "whoami",
+      "hostname",
+      "uptime",
+      "env",
+      "which",
+      "stat",
+      "touch",
+      "test",
+      "true",
+      "false",
+      "basename",
+      "dirname",
+      "sort",
+      "uniq",
+      "cut",
+      "tr",
+      "diff",
+      "tee",
+      "seq",
+      "yes",
+      "g++",
+      "gcc",
+      "cc",
+      "c++",
+      "make",
+      "cmake",
+      "ctest",
+      "python3",
+      "python",
+      "node",
+      "git",
+      "sed",
+      "awk",
+      "tar",
+      "gzip",
+      "gunzip",
+      "md5sum",
+      "sha256sum",
+      "realpath",
+      "readlink",
+      "rm",
+      "pytest",
+      "pip",
+      "pip3",
+      "npm",
+      "npx",
+      "yarn",
+      "pnpm",
+      "tsc",
+      "jest",
+      "vitest",
+      "java",
+      "javac",
+      "mvn",
+      "gradle",
+      "go",
+      "rustc",
+      "cargo",
+      "dotnet",
+      "swiftc",
+      "zig",
+      "ruby",
+      "php",
+      "perl",
+      "lua"
+    ],
+    "macos": [
+      "cat",
+      "grep",
+      "find",
+      "ls",
+      "head",
+      "tail",
+      "wc",
+      "mkdir",
+      "cp",
+      "mv",
+      "echo",
+      "file",
+      "du",
+      "ps",
+      "uname",
+      "sleep",
+      "date",
+      "time",
+      "pwd",
+      "whoami",
+      "hostname",
+      "uptime",
+      "env",
+      "which",
+      "stat",
+      "touch",
+      "test",
+      "true",
+      "false",
+      "basename",
+      "dirname",
+      "sort",
+      "uniq",
+      "cut",
+      "tr",
+      "diff",
+      "tee",
+      "seq",
+      "yes",
+      "g++",
+      "gcc",
+      "cc",
+      "c++",
+      "make",
+      "cmake",
+      "ctest",
+      "python3",
+      "python",
+      "node",
+      "git",
+      "sed",
+      "awk",
+      "tar",
+      "gzip",
+      "gunzip",
+      "md5sum",
+      "sha256sum",
+      "realpath",
+      "readlink",
+      "rm"
+    ],
+    "windows": [
+      "type",
+      "findstr",
+      "dir",
+      "echo",
+      "mkdir"
+    ],
+    "android": [
+      "cat",
+      "grep",
+      "ls",
+      "head",
+      "tail",
+      "wc",
+      "echo",
+      "mkdir",
+      "cp",
+      "mv",
+      "ps",
+      "uname",
+      "sleep",
+      "date",
+      "pwd",
+      "whoami",
+      "hostname",
+      "which",
+      "stat",
+      "touch",
+      "sort",
+      "uniq",
+      "cut",
+      "tr"
+    ],
+    "ios": [
+      "cat",
+      "grep",
+      "ls",
+      "head",
+      "tail",
+      "wc",
+      "echo",
+      "file",
+      "du",
+      "ps",
+      "uname",
+      "sleep",
+      "date",
+      "pwd",
+      "whoami",
+      "hostname",
+      "which",
+      "stat",
+      "touch",
+      "sort",
+      "uniq",
+      "cut",
+      "tr"
+    ]
+  },
+  "routing": {
+    "cloud_allowed_route_hints": [
+      "local_task_pipeline",
+      "local_clarify",
+      "local_reject",
+      "local_profile",
+      "local_status",
+      "cloud_llm",
+      "local_task_inline",
+      "local_action",
+      "local_external_weather",
+      "local_external_clarify"
+    ]
+  },
+  "cloud": {
+    "clarify_prefix": "",
+    "clarify_default_question": "需要补充信息",
+    "policy_contract_violation": "策略校验失败",
+    "task_pipeline_reject": "任务被拒绝",
+    "task_pipeline_failed": "步骤 {failed_at} 失败",
+    "task_pipeline_submitted": "已提交 {completed}/{step_count}"
+  },
+  "styles": {
+    "normal": {}
+  },
+  "intent_map": {}
+}

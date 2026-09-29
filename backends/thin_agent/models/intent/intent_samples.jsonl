@@ -1,0 +1,77 @@
+{"text": "查天气", "intent": "weather", "last_intent": "", "last_slots": {}}
+{"text": "今天上海天气", "intent": "weather", "last_intent": "", "last_slots": {}}
+{"text": "今天天气如何？", "intent": "weather", "last_intent": "weather", "last_slots": {"city": "上海"}}
+{"text": "深圳的呢", "intent": "weather", "last_intent": "weather", "last_slots": {"city": "上海"}}
+{"text": "看新闻", "intent": "news", "last_intent": "", "last_slots": {}}
+{"text": "最近AI新闻", "intent": "news", "last_intent": "", "last_slots": {}}
+{"text": "还有什么新闻？", "intent": "news", "last_intent": "news", "last_slots": {"topic_or_scope": "AI"}}
+{"text": "科技的呢", "intent": "news", "last_intent": "news", "last_slots": {"topic_or_scope": "AI"}}
+{"text": "你是谁", "intent": "profile", "last_intent": "", "last_slots": {}}
+{"text": "who r u", "intent": "profile", "last_intent": "", "last_slots": {}}
+{"text": "detail ability", "intent": "profile", "last_intent": "", "last_slots": {}}
+{"text": "你是什么模型", "intent": "status", "last_intent": "", "last_slots": {}}
+{"text": "刚才最后显示的是哪里的天气？", "intent": "memory_recent", "last_intent": "weather", "last_slots": {"city": "上海"}}
+{"text": "刚才看的是什么方向的新闻？", "intent": "memory_recent", "last_intent": "news", "last_slots": {"topic_or_scope": "AI"}}
+{"text": "最近事件", "intent": "event_recent", "last_intent": "", "last_slots": {}}
+{"text": "帮我写个冒泡排序", "intent": "general", "last_intent": "", "last_slots": {}}
+{"text": "xyzzy-tier2-classify-profile-token", "intent": "unknown", "last_intent": "", "last_slots": {}}
+{"text": "tier2-weather-followup-demo", "intent": "unknown", "last_intent": "", "last_slots": {}}
+{"text": "需要", "intent": "unknown", "last_intent": "weather", "last_slots": {"city": "上海"}}
+{"text": "How's the weather of Shanghai", "intent": "weather", "last_intent": "", "last_slots": {}}
+{"text": "来点ai快讯", "intent": "news", "last_intent": "", "last_slots": {}}
+{"text": "查下天况", "intent": "weather", "last_intent": "", "last_slots": {}}
+{"text": "介绍一下你自己", "intent": "profile", "last_intent": "", "last_slots": {}}
+{"text": "what can you do for me", "intent": "profile", "last_intent": "", "last_slots": {}}
+{"text": "短期记忆", "intent": "memory_recent", "last_intent": "", "last_slots": {}}
+{"text": "帮我查一下", "intent": "general", "last_intent": "", "last_slots": {}}
+{"text": "你的模型是什么", "intent": "status", "last_intent": "", "last_slots": {}}
+{"text": "你的本地模型用的什么", "intent": "status", "last_intent": "", "last_slots": {}}
+{"text": "消息能力", "intent": "general", "last_intent": "", "last_slots": {}}
+{"text": "好的", "intent": "unknown", "last_intent": "weather", "last_slots": {"city": "上海"}}
+{"text": "tell me about yourself briefly", "intent": "profile", "last_intent": "", "last_slots": {}}
+{"text": "今天天气如何？", "intent": "weather", "last_intent": "weather", "last_slots": {"city": "深圳"}}
+{"text": "外面热不热", "intent": "weather", "last_intent": "", "last_slots": {}}
+{"text": "今天会下雨吗", "intent": "weather", "last_intent": "", "last_slots": {}}
+{"text": "明天降温吗", "intent": "weather", "last_intent": "", "last_slots": {}}
+{"text": "现在北京多少度", "intent": "weather", "last_intent": "", "last_slots": {}}
+{"text": "带伞", "intent": "weather", "last_intent": "weather", "last_slots": {"city": "上海"}}
+{"text": "穿什么衣服", "intent": "weather", "last_intent": "weather", "last_slots": {"city": "上海"}}
+{"text": "成都气温", "intent": "weather", "last_intent": "", "last_slots": {}}
+{"text": "今天有什么新闻", "intent": "news", "last_intent": "", "last_slots": {}}
+{"text": "最新财经消息", "intent": "news", "last_intent": "", "last_slots": {}}
+{"text": "有体育新闻吗", "intent": "news", "last_intent": "", "last_slots": {}}
+{"text": "热点呢", "intent": "news", "last_intent": "news", "last_slots": {"topic_or_scope": "科技"}}
+{"text": "还有什么", "intent": "news", "last_intent": "news", "last_slots": {"topic_or_scope": "AI"}}
+{"text": "any breaking news", "intent": "news", "last_intent": "", "last_slots": {}}
+{"text": "你能做什么", "intent": "profile", "last_intent": "", "last_slots": {}}
+{"text": "你帮得了我什么", "intent": "profile", "last_intent": "", "last_slots": {}}
+{"text": "你的名字", "intent": "profile", "last_intent": "", "last_slots": {}}
+{"text": "有什么功能", "intent": "profile", "last_intent": "", "last_slots": {}}
+{"text": "现在用的哪个模型", "intent": "status", "last_intent": "", "last_slots": {}}
+{"text": "当前是什么model", "intent": "status", "last_intent": "", "last_slots": {}}
+{"text": "本地跑的是什么", "intent": "status", "last_intent": "", "last_slots": {}}
+{"text": "onnx开了吗", "intent": "status", "last_intent": "", "last_slots": {}}
+{"text": "用的是哪家provider", "intent": "status", "last_intent": "", "last_slots": {}}
+{"text": "刚查的天气", "intent": "memory_recent", "last_intent": "weather", "last_slots": {"city": "深圳"}}
+{"text": "上次看的是哪儿的新闻", "intent": "memory_recent", "last_intent": "news", "last_slots": {"topic_or_scope": "财经"}}
+{"text": "记录一下刚才的对话", "intent": "memory_recent", "last_intent": "weather", "last_slots": {"city": "上海"}}
+{"text": "前面你说什么来着", "intent": "memory_recent", "last_intent": "weather", "last_slots": {"city": "上海"}}
+{"text": "最近有啥事", "intent": "event_recent", "last_intent": "", "last_slots": {}}
+{"text": "有什么新事件吗", "intent": "event_recent", "last_intent": "", "last_slots": {}}
+{"text": "事件列表", "intent": "event_recent", "last_intent": "", "last_slots": {}}
+{"text": "帮我查下xxx的资料", "intent": "general", "last_intent": "", "last_slots": {}}
+{"text": "搜索一下Python多线程", "intent": "general", "last_intent": "", "last_slots": {}}
+{"text": "帮我找一下最近的论文", "intent": "general", "last_intent": "", "last_slots": {}}
+{"text": "嗯", "intent": "unknown", "last_intent": "weather", "last_slots": {"city": "上海"}}
+{"text": "谢谢", "intent": "unknown", "last_intent": "", "last_slots": {}}
+{"text": "hello", "intent": "unknown", "last_intent": "", "last_slots": {}}
+{"text": "帮我拍张照", "intent": "unknown", "last_intent": "", "last_slots": {}}
+{"text": "不是问你，是问另外一个ONNX模型是什么", "intent": "unknown", "last_intent": "", "last_slots": {}}
+{"text": "xyzzy-tier2-classify-demo-token", "intent": "unknown", "last_intent": "", "last_slots": {}}
+{"text": "xyzzy-onnx-golden-holdout-token", "intent": "unknown", "last_intent": "", "last_slots": {}}
+{"text": "帮我录个音", "intent": "unknown", "last_intent": "", "last_slots": {}}
+{"text": "打开摄像头", "intent": "unknown", "last_intent": "", "last_slots": {}}
+{"text": "今天星期几", "intent": "unknown", "last_intent": "", "last_slots": {}}
+{"text": "帮我翻译一下这段话", "intent": "unknown", "last_intent": "", "last_slots": {}}
+{"text": "不用了", "intent": "unknown", "last_intent": "weather", "last_slots": {"city": "上海"}}
+{"text": "算了不查了", "intent": "unknown", "last_intent": "news", "last_slots": {"topic_or_scope": "AI"}}

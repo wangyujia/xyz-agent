@@ -1,0 +1,348 @@
+{
+  "keywords": {
+    "weather": ["天况", "天气", "气温", "weather"],
+    "news": ["新闻", "头条", "快讯", "热点", "news"],
+    "profile": ["自我档案"],
+    "status": ["系统体检"],
+    "event": ["最新播报"],
+    "memory_recent": ["会话速记"],
+    "memory_history": ["历史档案"],
+    "memory_search": ["记忆检索"],
+    "memory_summary": ["记忆摘要"],
+    "general": ["泛检索"],
+    "general_info_query_include": ["进展", "动态", "情况", "最近", "如何", "总结", "概况", "消息", "查", "搜"],
+    "general_info_query_exclude": ["天气", "气温", "新闻", "头条", "状态", "health", "执行", "任务", "拍照", "录制", "删除", "清空", "转账", "密钥", "密码", "重启", "kill", "rm "],
+    "task_capture_inline": ["咔嚓任务", "帮我拍", "拍一张照", "拍照并告诉我结果", "提交任务", "任务拍照", "拍照任务"],
+    "task_start_recording_inline": ["开始录制任务", "录制任务", "帮我开始录制并告诉我结果"],
+    "action_capture": ["咔嚓一下", "拍照", "capture_photo"],
+    "action_start_recording": ["录制", "开始录制", "start_recording"]
+  },
+  "intents": {
+    "weather": {
+      "kind": "external",
+      "required_slots": ["city"],
+      "primary_slot": "city",
+      "slot_detector": "weather_city",
+      "dialog_slot_policy": "referential",
+      "optional_slots": {
+        "date": {"default": "今天", "resolver": "weather_date"}
+      },
+      "clarify_template_key": "weather.clarify",
+      "fetch_failed_template_key": "weather.fetch_failed",
+      "summary_template_key": "weather.summary",
+      "route_execute": "local_external_weather",
+      "route_clarify": "local_external_clarify",
+      "fetcher": "weather",
+      "query_suffix": "的天气",
+      "boost_on_slot_filled": true,
+      "require_execute_threshold": false,
+      "post_execute": "weather_advice",
+      "reasons": {
+        "missing": "weather_missing_city",
+        "fetch_ok": "weather_fetch_ok",
+        "fetch_failed": "weather_fetch_failed"
+      }
+    },
+    "news": {
+      "kind": "external",
+      "required_slots": ["topic_or_scope"],
+      "primary_slot": "topic_or_scope",
+      "slot_detector": "news_topic",
+      "dialog_slot_policy": "same_intent",
+      "optional_slots": {
+        "time_range": {"default": "最近", "resolver": "news_time_range"}
+      },
+      "clarify_template_key": "news.clarify",
+      "fetch_failed_template_key": "news.fetch_failed",
+      "summary_template_key": "news.summary",
+      "route_execute": "local_external_news",
+      "route_clarify": "local_external_clarify",
+      "fetcher": "news",
+      "query_suffix": "新闻",
+      "boost_on_slot_filled": true,
+      "require_execute_threshold": true,
+      "post_execute": "",
+      "reasons": {
+        "missing": "news_missing_topic",
+        "conf_below": "news_confidence_below_execute",
+        "fetch_ok": "news_fetch_ok",
+        "fetch_failed": "news_fetch_failed"
+      }
+    },
+    "profile": {
+      "kind": "local",
+      "handler": "profile",
+      "keyword_key": "profile",
+      "route_execute": "local_profile",
+      "default_confidence": 0.99,
+      "route_excludes": ["model_status", "cloud_meta", "messaging_capability", "supported_languages"],
+      "reasons": {
+        "execute": "user_asks_agent_identity",
+        "execute_detail": "user_asks_agent_capability_detail"
+      }
+    },
+    "status": {
+      "kind": "local",
+      "handler": "status",
+      "keyword_key": "status",
+      "route_execute": "local_status",
+      "summary_template_key": "status.summary",
+      "default_confidence": 0.98,
+      "reasons": {"execute": "status_intent"}
+    },
+    "event_recent": {
+      "kind": "local",
+      "handler": "event_recent",
+      "keyword_key": "event",
+      "route_execute": "local_events",
+      "default_confidence": 0.97,
+      "reasons": {"execute": "event_intent"}
+    },
+    "memory_recent": {
+      "kind": "local",
+      "handler": "memory_recent",
+      "keyword_key": "memory_recent",
+      "route_execute": "local_memory_recent",
+      "default_confidence": 0.97,
+      "reasons": {"execute": "memory_recent_intent"}
+    },
+    "memory_history": {
+      "kind": "local",
+      "handler": "memory_history",
+      "keyword_key": "memory_history",
+      "route_execute": "local_memory_history",
+      "default_confidence": 0.97,
+      "reasons": {"execute": "memory_history_intent"}
+    },
+    "memory_search": {
+      "kind": "local",
+      "handler": "memory_search",
+      "keyword_key": "memory_search",
+      "route_execute": "local_memory_search",
+      "summary_template_key": "memory.search_summary",
+      "default_confidence": 0.97,
+      "reasons": {"execute": "memory_search_intent"}
+    },
+    "memory_summary": {
+      "kind": "local",
+      "handler": "memory_summary",
+      "keyword_key": "memory_summary",
+      "route_execute": "local_memory_summary",
+      "summary_template_key": "memory.summary_summary",
+      "default_confidence": 0.97,
+      "reasons": {"execute": "memory_summary_intent"}
+    },
+    "short_ack": {
+      "kind": "clarify",
+      "predicate": "short_ack",
+      "route_execute": "local_clarify",
+      "clarify_template_key": "chat.short_ack",
+      "intent_label": "general",
+      "default_confidence": 0.80,
+      "reasons": {"execute": "short_conversation_ack"}
+    },
+    "messaging_capability": {
+      "kind": "clarify",
+      "predicate": "messaging_capability",
+      "route_execute": "local_clarify",
+      "clarify_template_key": "chat.messaging_capability_clarify",
+      "intent_label": "general",
+      "default_confidence": 0.75,
+      "reasons": {"execute": "messaging_capability_clarify"}
+    },
+    "onnx_knowledge": {
+      "kind": "local",
+      "predicate": "onnx_knowledge",
+      "handler": "onnx_knowledge",
+      "route_execute": "local_status",
+      "summary_template_key": "status.onnx_explainer",
+      "intent_label": "status",
+      "default_confidence": 0.94,
+      "reasons": {"execute": "onnx_knowledge_local"}
+    },
+    "supported_languages": {
+      "kind": "local",
+      "predicate": "supported_languages",
+      "handler": "supported_languages",
+      "route_execute": "local_supported_languages",
+      "intent_label": "general",
+      "default_confidence": 0.95,
+      "reasons": {"execute": "supported_languages_query"}
+    },
+    "general": {
+      "kind": "external_clarify",
+      "keyword_key": "general",
+      "clarify_template_key": "general.clarify",
+      "route_clarify": "local_external_clarify",
+      "intent_label": "general",
+      "require_execute_threshold": true,
+      "reasons": {"missing": "general_external_needs_scope"}
+    },
+    "task_capture_inline": {
+      "kind": "task",
+      "keyword_key": "task_capture_inline",
+      "action_name": "capture_photo",
+      "route_execute": "local_task_inline",
+      "summary_template_key": "task.capture_submitted",
+      "intent_label": "task_capture",
+      "default_confidence": 0.98,
+      "reasons": {
+        "execute": "task_expression_capture_photo",
+        "fetch_failed": "task_engine_unavailable"
+      }
+    },
+    "task_start_recording_inline": {
+      "kind": "task",
+      "keyword_key": "task_start_recording_inline",
+      "action_name": "start_recording",
+      "route_execute": "local_task_inline",
+      "summary_template_key": "task.start_recording_submitted",
+      "intent_label": "task_start_recording",
+      "default_confidence": 0.98,
+      "reasons": {
+        "execute": "task_expression_start_recording",
+        "fetch_failed": "task_engine_unavailable"
+      }
+    },
+    "action_capture": {
+      "kind": "action",
+      "keyword_key": "action_capture",
+      "action_name": "capture_photo",
+      "route_execute": "local_action",
+      "intent_label": "action_capture_photo",
+      "default_confidence": 0.96,
+      "reasons": {"execute": "action_intent_capture_photo"}
+    },
+    "action_start_recording": {
+      "kind": "action",
+      "keyword_key": "action_start_recording",
+      "action_name": "start_recording",
+      "route_execute": "local_action",
+      "intent_label": "action_start_recording",
+      "default_confidence": 0.96,
+      "reasons": {"execute": "action_intent_start_recording"}
+    },
+    "budget_gate": {
+      "kind": "gate",
+      "predicate": "budget_exceeded",
+      "gate_mode": "cloud",
+      "route_execute": "local_clarify",
+      "clarify_template_key": "budget.clarify",
+      "intent_label": "general",
+      "default_confidence": 0.60,
+      "reasons": {
+        "budget_input": "budget_input_exceeded",
+        "budget_latency": "budget_latency_exceeded",
+        "budget_cost": "budget_cost_exceeded"
+      }
+    }
+  },
+  "slots": {
+    "weather": {
+      "cities": [
+        {"aliases": ["上海"], "value": "上海"},
+        {"aliases": ["北京"], "value": "北京"},
+        {"aliases": ["深圳"], "value": "深圳"},
+        {"aliases": ["shanghai"], "value": "Shanghai", "match_lower": true}
+      ],
+      "date_aliases": [
+        {"match": ["今天", "今日"], "value": "今天"},
+        {"match": ["明天"], "value": "明天"}
+      ],
+      "followup_suffixes": ["的呢", "的天气", "天气", "呢", "怎么样", "如何"],
+      "trailing_particles": ["的"],
+      "confirm_replies": ["需要", "好的", "好", "行", "是", "yes", "ok"],
+      "extra_triggers": ["weather", "wether", "天况"],
+      "query_suffix": "的天气"
+    },
+    "news": {
+      "topics": [
+        {"aliases": ["ai"], "value": "AI", "match_lower": true},
+        {"aliases": ["科技"], "value": "科技"}
+      ],
+      "time_range_aliases": [
+        {"match": ["今天", "今日"], "value": "今天"},
+        {"match": ["最近", "近24小时", "24小时"], "value": "最近"}
+      ],
+      "followup_suffixes": ["新闻", "消息", "呢", "方面的"],
+      "query_suffix": "新闻"
+    }
+  },
+  "templates": {
+    "weather.clarify": "[CFG] 请提供城市，我来查天况。",
+    "weather.clarify_en": "[CFG_EN] which city?",
+    "news.clarify": "[CFG] 请提供新闻主题。",
+    "news.clarify_en": "[CFG_EN] which topic?",
+    "news.summary": "[CFG] 新闻摘要：{topic}",
+    "news.summary_en": "[CFG_EN] {topic} news: {top1} | {top2}",
+    "weather.summary_en": "[CFG_EN] {city} {date}: {condition}, {temp_c}C, {humidity}%",
+    "weather.fetch_failed": "[CFG_WEATHER_FETCH_FAILED] 天气服务暂时不可用，请稍后重试。",
+    "weather.fetch_failed_en": "[CFG_EN_WFAIL] weather service busy.",
+    "news.fetch_failed": "[CFG_NEWS_FETCH_FAILED] 新闻服务暂时不可用，请稍后重试。",
+    "news.fetch_failed_en": "[CFG_EN_NFAIL] news service busy.",
+    "profile.concise": "[CFG_PROFILE] 这是来自配置的简版主体介绍。",
+    "status.summary": "[CFG_STATUS] 这是来自配置的状态摘要。",
+    "event.list_header": "最近事件（{count} 条）:\n",
+    "event.empty": "(无)",
+    "memory.recent.list_header": "会话短期记忆（{count} 条）:\n",
+    "memory.recent.empty": "(暂无)",
+    "memory.history.list_header": "长期记忆历史（{count} 条）:\n",
+    "memory.history.empty": "(暂无)",
+    "event.summary": "[CFG_EVENT] 已返回配置化事件窗口。",
+    "memory.recent_summary": "[CFG_MEMORY_RECENT] 已返回配置化会话记忆。",
+    "memory.history_summary": "[CFG_MEMORY_HISTORY] 已返回配置化历史记忆。",
+    "memory.search_summary": "[CFG_MEMORY_SEARCH] 已返回配置化记忆检索结果。",
+    "memory.summary_summary": "[CFG_MEMORY_SUMMARY] 已返回配置化记忆摘要。",
+    "memory.maintenance_conclusion": "[CFG_MAINT_CONCLUSION] 命中{total_hits}条（task={task_hits}，audit={audit_hits}），query={query}，limit={limit}。",
+    "memory.maintenance_evidence": "[CFG_MAINT_EVIDENCE] #1 {top1}{latest_tag}；#2 {top2}",
+    "memory.maintenance_summary_evidence": "[CFG_MAINT_SUMMARY] latest={latest_task_id}/{latest_kind}/{latest_row_ref}",
+    "general.clarify": "[CFG_GENERAL] 请补充范围后我继续检索。",
+    "budget.clarify": "[CFG_BUDGET] 当前请求超出预算阈值，请缩小范围后重试。",
+    "cloud.clarify_prefix": "[CFG_CLOUD_PREFIX] ",
+    "cloud.clarify_default_question": "[CFG_CLOUD_ASK] 请确认你要状态、能力还是执行动作。",
+    "cloud.policy_contract_violation": "[CFG_POLICY_CONTRACT] 云策略字段不合规，已降级本地澄清。",
+    "cloud.reject": "[CFG_CLOUD_REJECT] 这是来自配置的拒绝文案。",
+    "cloud.reject_downgrade_clarify": "[CFG_CLOUD_REJECT_DOWNGRADE] 这类信息检索请求我先不直接拒绝。请补充你关注的范围（时间/模块/地区），我就继续帮你查。",
+    "cloud.status_local": "[CFG_CLOUD_STATUS] 这是来自配置的本地状态回包。",
+    "cloud.task_inline_reject": "[CFG_CLOUD_TASK_REJECT] task_engine 未就绪。",
+    "cloud.task_inline_submitted": "[CFG_CLOUD_TASK_EXEC] action={action} task_id={task_id} state={state}",
+    "cloud.offline_local_fallback": "[CFG_OFFLINE_LOCAL] 当前离线模式。可执行本地动作，并可后续切换云模型。输入回显：{text}",
+    "cloud.fallback_missing_key": "[CFG_CLOUD_MISSING_KEY] 未检测到云模型密钥，已回退离线模式。输入回显：{text}",
+    "cloud.fallback_call_failed": "[CFG_CLOUD_CALL_FAILED] 云调用失败，已回退离线模式。输入回显：{text}",
+    "cloud.error_call_failed_no_fallback": "[CFG_CLOUD_ERROR] 云调用失败且未允许离线回退。",
+    "task.capture_submitted": "[CFG_TASK_CAPTURE] 已提交拍照任务 task_id={task_id} state={state}",
+    "action.capture_ok": "[CFG_ACTION_CAPTURE_OK] 已按配置执行拍照动作。",
+    "action.capture_fail": "[CFG_ACTION_CAPTURE_FAIL] 拍照动作返回非0，请查看 observation.result。"
+  },
+  "style": {
+    "default": "warm",
+    "normal": {
+      "cloud": {
+        "clarify_prefix": "[CFG_STYLE_NORMAL_CLARIFY] ",
+        "answer_prefix": "[CFG_STYLE_NORMAL_ANSWER] "
+      }
+    },
+    "warm": {
+      "cloud": {
+        "clarify_prefix": "[CFG_STYLE_WARM_CLARIFY] ",
+        "answer_prefix": "[CFG_STYLE_WARM_ANSWER] "
+      },
+      "profile": {
+        "concise_prefix": "[CFG_STYLE_WARM_PROFILE] ",
+        "detailed_prefix": "[CFG_STYLE_WARM_PROFILE_DETAIL] "
+      },
+      "local": {
+        "status_prefix": "[CFG_STYLE_WARM_LOCAL_STATUS] ",
+        "event_prefix": "[CFG_STYLE_WARM_LOCAL_EVENT] ",
+        "memory_recent_prefix": "[CFG_STYLE_WARM_LOCAL_MEMORY_RECENT] ",
+        "memory_history_prefix": "[CFG_STYLE_WARM_LOCAL_MEMORY_HISTORY] ",
+        "memory_search_prefix": "[CFG_STYLE_WARM_LOCAL_MEMORY_SEARCH] ",
+        "memory_summary_prefix": "[CFG_STYLE_WARM_LOCAL_MEMORY_SUMMARY] ",
+        "task_prefix": "[CFG_STYLE_WARM_LOCAL_TASK] ",
+        "action_prefix": "[CFG_STYLE_WARM_LOCAL_ACTION] ",
+        "external_clarify_prefix": "[CFG_STYLE_WARM_LOCAL_EXTERNAL_CLARIFY] ",
+        "external_summary_prefix": "[CFG_STYLE_WARM_LOCAL_EXTERNAL_SUMMARY] "
+      }
+    }
+  }
+}

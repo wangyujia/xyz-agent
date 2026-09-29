@@ -1,0 +1,4262 @@
+{
+  "_meta": {
+    "description": "thin_agent 对话策略配置（关键词、模板、槽位、路由）。运行时代码仅读取下方业务字段，本块可忽略。",
+    "override_env": "THIN_AGENT_CHAT_POLICY_PATH",
+    "default_path": "config/chat_policy.json",
+    "sections": {
+      "intent_thresholds": "模糊意图阈值：execute（直接执行）、clarify（澄清）",
+      "intent_policy": "阶段3副作用门控表：side_effect / requires_dialogue_act / on_mismatch",
+      "intent_anchors": "IntentScorer 锚点短语及权重；dialog_boost 为多轮上下文加分",
+      "keywords": "规则引擎关键词表；key 对应 ChatPolicy::policy_keywords(key) / contains_any_policy",
+      "nlp": "口语填充词剥离（query_filler_prefix）",
+      "slots": "天气/新闻槽位：城市表、主题表、续接后缀、确认词、query_suffix",
+      "intents": "外部/本地/澄清/任务/动作/gate 意图声明；AgentService 按 kind 分发执行",
+      "profile": "profile 详细模式触发词（detail_markers）",
+      "localization": "城市/天气状况中英文本地化映射",
+      "languages": "27 种对外支持语种、15 种模板语种、支持语言问句与回答模板",
+      "meta_questions": "端云 meta 问题探测（cloud_keywords / identity_exclude）",
+      "routing": "云策略路由：local_route_hint 白名单、复杂意图标记、JSON 解析启发式词表",
+      "templates": "用户可见回复模板，支持 {placeholder}；由 policy_text(key) 读取",
+      "style": "语气风格前缀：style.<name>.<scope>.<key>，如 warm.local.status_prefix"
+    }
+  },
+  "intent_thresholds": {
+    "execute": 0.75,
+    "clarify": 0.45
+  },
+  "intent_policy": {
+    "_doc": "阶段3：副作用与话轮门控表。side_effect=true 的意图必须满足 requires_dialogue_act；on_mismatch=clarify|block_execute|status_query",
+    "media_capture_execute": {
+      "family": "media",
+      "side_effect": true,
+      "requires_dialogue_act": "command",
+      "on_mismatch": "clarify"
+    },
+    "media_capture_status": {
+      "family": "media",
+      "side_effect": false,
+      "requires_dialogue_act": "question",
+      "requires_media_context": false,
+      "on_mismatch": "block_execute"
+    },
+    "media_recording_execute": {
+      "family": "media",
+      "side_effect": true,
+      "requires_dialogue_act": "command",
+      "on_mismatch": "clarify"
+    },
+    "media_plan": {
+      "family": "media",
+      "side_effect": true,
+      "requires_dialogue_act": "command",
+      "on_mismatch": "clarify"
+    },
+    "task_capture_inline": {
+      "family": "media",
+      "side_effect": true,
+      "requires_dialogue_act": "command",
+      "on_mismatch": "clarify",
+      "fuzzy_alias": "media_capture_execute"
+    },
+    "task_start_recording_inline": {
+      "family": "media",
+      "side_effect": true,
+      "requires_dialogue_act": "command",
+      "on_mismatch": "clarify",
+      "fuzzy_alias": "media_recording_execute"
+    },
+    "action_capture": {
+      "family": "media",
+      "side_effect": true,
+      "requires_dialogue_act": "command",
+      "on_mismatch": "clarify",
+      "fuzzy_alias": "media_capture_execute"
+    },
+    "action_start_recording": {
+      "family": "media",
+      "side_effect": true,
+      "requires_dialogue_act": "command",
+      "on_mismatch": "clarify",
+      "fuzzy_alias": "media_recording_execute"
+    },
+    "search": {
+      "side_effect": true,
+      "requires_dialogue_act": false,
+      "on_mismatch": "clarify"
+    }
+  },
+  "intents": {
+    "weather": {
+      "kind": "external",
+      "required_slots": [
+        "city"
+      ],
+      "primary_slot": "city",
+      "slot_detector": "weather_city",
+      "dialog_slot_policy": "referential",
+      "optional_slots": {
+        "date": {
+          "default": "今天",
+          "resolver": "weather_date"
+        }
+      },
+      "clarify_template_key": "weather.clarify",
+      "fetch_failed_template_key": "weather.fetch_failed",
+      "summary_template_key": "weather.summary",
+      "route_execute": "local_external_weather",
+      "route_clarify": "local_external_clarify",
+      "fetcher": "weather",
+      "query_suffix": "的天气",
+      "boost_on_slot_filled": true,
+      "require_execute_threshold": false,
+      "post_execute": "weather_advice",
+      "reasons": {
+        "missing": "weather_missing_city",
+        "fetch_ok": "weather_fetch_ok",
+        "fetch_failed": "weather_fetch_failed"
+      }
+    },
+    "news": {
+      "kind": "external",
+      "required_slots": [
+        "topic_or_scope"
+      ],
+      "primary_slot": "topic_or_scope",
+      "slot_detector": "news_topic",
+      "dialog_slot_policy": "same_intent",
+      "optional_slots": {
+        "time_range": {
+          "default": "最近",
+          "resolver": "news_time_range"
+        }
+      },
+      "clarify_template_key": "news.clarify",
+      "fetch_failed_template_key": "news.fetch_failed",
+      "summary_template_key": "news.summary",
+      "route_execute": "local_external_news",
+      "route_clarify": "local_external_clarify",
+      "fetcher": "news",
+      "query_suffix": "新闻",
+      "boost_on_slot_filled": true,
+      "require_execute_threshold": true,
+      "post_execute": "",
+      "reasons": {
+        "missing": "news_missing_topic",
+        "conf_below": "news_confidence_below_execute",
+        "fetch_ok": "news_fetch_ok",
+        "fetch_failed": "news_fetch_failed"
+      }
+    },
+    "search": {
+      "kind": "external",
+      "required_slots": [
+        "query"
+      ],
+      "primary_slot": "query",
+      "slot_detector": "search_query",
+      "dialog_slot_policy": "same_intent",
+      "clarify_template_key": "search.clarify",
+      "fetch_failed_template_key": "search.fetch_failed",
+      "summary_template_key": "search.summary",
+      "route_execute": "local_external_search",
+      "route_clarify": "local_external_clarify",
+      "fetcher": "search",
+      "query_suffix": "",
+      "boost_on_slot_filled": true,
+      "require_execute_threshold": true,
+      "post_execute": "",
+      "reasons": {
+        "missing": "search_missing_query",
+        "conf_below": "search_confidence_below_execute",
+        "fetch_ok": "search_fetch_ok",
+        "fetch_failed": "search_fetch_failed"
+      }
+    },
+    "profile": {
+      "kind": "local",
+      "handler": "profile",
+      "keyword_key": "profile",
+      "route_execute": "local_profile",
+      "default_confidence": 0.99,
+      "route_excludes": [
+        "model_status",
+        "cloud_meta",
+        "messaging_capability",
+        "supported_languages"
+      ],
+      "reasons": {
+        "execute": "user_asks_agent_identity",
+        "execute_detail": "user_asks_agent_capability_detail"
+      }
+    },
+    "status": {
+      "kind": "local",
+      "handler": "status",
+      "keyword_key": "status",
+      "route_execute": "local_status",
+      "summary_template_key": "status.summary",
+      "default_confidence": 0.98,
+      "reasons": {
+        "execute": "status_intent"
+      }
+    },
+    "event_recent": {
+      "kind": "local",
+      "handler": "event_recent",
+      "keyword_key": "event",
+      "route_execute": "local_events",
+      "default_confidence": 0.97,
+      "reasons": {
+        "execute": "event_intent"
+      }
+    },
+    "memory_recent": {
+      "kind": "local",
+      "handler": "memory_recent",
+      "keyword_key": "memory_recent",
+      "route_execute": "local_memory_recent",
+      "default_confidence": 0.97,
+      "reasons": {
+        "execute": "memory_recent_intent"
+      }
+    },
+    "memory_history": {
+      "kind": "local",
+      "handler": "memory_history",
+      "keyword_key": "memory_history",
+      "route_execute": "local_memory_history",
+      "default_confidence": 0.97,
+      "reasons": {
+        "execute": "memory_history_intent"
+      }
+    },
+    "memory_search": {
+      "kind": "local",
+      "handler": "memory_search",
+      "keyword_key": "memory_search",
+      "route_execute": "local_memory_search",
+      "summary_template_key": "memory.search_summary",
+      "default_confidence": 0.97,
+      "reasons": {
+        "execute": "memory_search_intent"
+      }
+    },
+    "memory_summary": {
+      "kind": "local",
+      "handler": "memory_summary",
+      "keyword_key": "memory_summary",
+      "route_execute": "local_memory_summary",
+      "summary_template_key": "memory.summary_summary",
+      "default_confidence": 0.97,
+      "reasons": {
+        "execute": "memory_summary_intent"
+      }
+    },
+    "short_ack": {
+      "kind": "clarify",
+      "predicate": "short_ack",
+      "route_execute": "local_clarify",
+      "clarify_template_key": "chat.short_ack",
+      "intent_label": "general",
+      "default_confidence": 0.8,
+      "reasons": {
+        "execute": "short_conversation_ack"
+      }
+    },
+    "messaging_capability": {
+      "kind": "clarify",
+      "predicate": "messaging_capability",
+      "route_execute": "local_clarify",
+      "clarify_template_key": "chat.messaging_capability_clarify",
+      "intent_label": "general",
+      "default_confidence": 0.75,
+      "reasons": {
+        "execute": "messaging_capability_clarify"
+      }
+    },
+    "onnx_knowledge": {
+      "kind": "local",
+      "predicate": "onnx_knowledge",
+      "handler": "onnx_knowledge",
+      "route_execute": "local_status",
+      "summary_template_key": "status.onnx_explainer",
+      "intent_label": "status",
+      "default_confidence": 0.94,
+      "reasons": {
+        "execute": "onnx_knowledge_local"
+      }
+    },
+    "supported_languages": {
+      "kind": "local",
+      "predicate": "supported_languages",
+      "handler": "supported_languages",
+      "route_execute": "local_supported_languages",
+      "intent_label": "general",
+      "default_confidence": 0.95,
+      "reasons": {
+        "execute": "supported_languages_query"
+      }
+    },
+    "general": {
+      "kind": "external_clarify",
+      "keyword_key": "general",
+      "clarify_template_key": "general.clarify",
+      "route_clarify": "local_external_clarify",
+      "intent_label": "general",
+      "require_execute_threshold": true,
+      "reasons": {
+        "missing": "general_external_needs_scope"
+      }
+    },
+    "task_capture_inline": {
+      "kind": "task",
+      "keyword_key": "task_capture_inline",
+      "action_name": "capture_photo",
+      "route_execute": "local_task_inline",
+      "summary_template_key": "task.capture_submitted",
+      "intent_label": "task_capture",
+      "default_confidence": 0.98,
+      "reasons": {
+        "execute": "task_expression_capture_photo",
+        "fetch_failed": "task_engine_unavailable"
+      }
+    },
+    "task_start_recording_inline": {
+      "kind": "task",
+      "keyword_key": "task_start_recording_inline",
+      "action_name": "start_recording",
+      "route_execute": "local_task_inline",
+      "summary_template_key": "task.start_recording_submitted",
+      "intent_label": "task_start_recording",
+      "default_confidence": 0.98,
+      "reasons": {
+        "execute": "task_expression_start_recording",
+        "fetch_failed": "task_engine_unavailable"
+      }
+    },
+    "action_capture": {
+      "kind": "action",
+      "keyword_key": "action_capture",
+      "action_name": "capture_photo",
+      "route_execute": "local_action",
+      "intent_label": "action_capture_photo",
+      "default_confidence": 0.96,
+      "reasons": {
+        "execute": "action_intent_capture_photo"
+      }
+    },
+    "action_start_recording": {
+      "kind": "action",
+      "keyword_key": "action_start_recording",
+      "action_name": "start_recording",
+      "route_execute": "local_action",
+      "intent_label": "action_start_recording",
+      "default_confidence": 0.96,
+      "reasons": {
+        "execute": "action_intent_start_recording"
+      }
+    },
+    "budget_gate": {
+      "kind": "gate",
+      "predicate": "budget_exceeded",
+      "gate_mode": "cloud",
+      "route_execute": "local_clarify",
+      "clarify_template_key": "budget.clarify",
+      "intent_label": "general",
+      "default_confidence": 0.6,
+      "reasons": {
+        "budget_input": "budget_input_exceeded",
+        "budget_latency": "budget_latency_exceeded",
+        "budget_cost": "budget_cost_exceeded"
+      }
+    }
+  },
+  "intent_anchors": {
+    "profile": {
+      "dialog_boost": 0.0,
+      "anchors": [
+        {
+          "text": "你是谁",
+          "weight": 1.0
+        },
+        {
+          "text": "你是哪个",
+          "weight": 1.0
+        },
+        {
+          "text": "你是什么",
+          "weight": 0.95
+        },
+        {
+          "text": "介绍一下",
+          "weight": 0.9
+        },
+        {
+          "text": "自我介绍",
+          "weight": 0.95
+        },
+        {
+          "text": "who are you",
+          "weight": 1.0
+        },
+        {
+          "text": "what are you",
+          "weight": 0.95
+        },
+        {
+          "text": "your name",
+          "weight": 0.9
+        },
+        {
+          "text": "你有哪些能力",
+          "weight": 0.92
+        },
+        {
+          "text": "怎么用你",
+          "weight": 0.88
+        },
+        {
+          "text": "有哪些技能",
+          "weight": 0.92
+        },
+        {
+          "text": "技能列表",
+          "weight": 0.9
+        },
+        {
+          "text": "什么技能",
+          "weight": 0.88
+        },
+        {
+          "text": "详细技能",
+          "weight": 0.92
+        },
+        {
+          "text": "能力",
+          "weight": 0.85
+        },
+        {
+          "text": "what skills",
+          "weight": 0.92
+        },
+        {
+          "text": "your skills",
+          "weight": 0.9
+        },
+        {
+          "text": "ur skills",
+          "weight": 0.88
+        },
+        {
+          "text": "detailed skills",
+          "weight": 0.92
+        },
+        {
+          "text": "capabilities",
+          "weight": 0.85
+        },
+        {
+          "text": "what capabilities",
+          "weight": 0.9
+        },
+        {
+          "text": "your capabilities",
+          "weight": 0.88
+        },
+        {
+          "text": "ur capabilities",
+          "weight": 0.85
+        },
+        {
+          "text": "你能做什么",
+          "weight": 0.9
+        },
+        {
+          "text": "你会什么",
+          "weight": 0.88
+        },
+        {
+          "text": "你都会什么",
+          "weight": 0.86
+        },
+        {
+          "text": "你可以做什么",
+          "weight": 0.88
+        },
+        {
+          "text": "能做什么",
+          "weight": 0.85
+        },
+        {
+          "text": "有什么功能",
+          "weight": 0.88
+        },
+        {
+          "text": "你有哪些技能",
+          "weight": 0.9
+        },
+        {
+          "text": "你的技能",
+          "weight": 0.88
+        },
+        {
+          "text": "目前有什么技能",
+          "weight": 0.88
+        },
+        {
+          "text": "现在有哪些技能",
+          "weight": 0.88
+        },
+        {
+          "text": "你有什么技能",
+          "weight": 0.88
+        },
+        {
+          "text": "what can you do",
+          "weight": 0.9
+        },
+        {
+          "text": "what do you do",
+          "weight": 0.88
+        }
+      ]
+    },
+    "profile_short": {
+      "anchors": [
+        {
+          "text": "说说你自己",
+          "weight": 1.0
+        },
+        {
+          "text": "说说自己",
+          "weight": 0.95
+        },
+        {
+          "text": "有哪些技能",
+          "weight": 0.9
+        },
+        {
+          "text": "有什么技能",
+          "weight": 0.9
+        },
+        {
+          "text": "你有哪些能力",
+          "weight": 0.88
+        },
+        {
+          "text": "你有什么能力",
+          "weight": 0.88
+        }
+      ]
+    },
+    "profile_detail": {
+      "anchors": [
+        {
+          "text": "详细能力",
+          "weight": 1.0
+        },
+        {
+          "text": "详细介绍",
+          "weight": 0.95
+        },
+        {
+          "text": "详细技能",
+          "weight": 0.92
+        },
+        {
+          "text": "detailed skills",
+          "weight": 0.92
+        },
+        {
+          "text": "detailed capabilities",
+          "weight": 0.9
+        },
+        {
+          "text": "detail skills",
+          "weight": 0.88
+        },
+        {
+          "text": "detail capabilities",
+          "weight": 0.85
+        },
+        {
+          "text": "你能做什么详细",
+          "weight": 0.88
+        },
+        {
+          "text": "详细功能列表",
+          "weight": 0.9
+        },
+        {
+          "text": "全部技能",
+          "weight": 0.88
+        },
+        {
+          "text": "所有技能",
+          "weight": 0.88
+        },
+        {
+          "text": "完整技能列表",
+          "weight": 0.9
+        },
+        {
+          "text": "技能详情",
+          "weight": 0.9
+        },
+        {
+          "text": "功能列表",
+          "weight": 0.88
+        }
+      ]
+    },
+    "weather": {
+      "dialog_boost": 0.35,
+      "anchors": [
+        {
+          "text": "天气",
+          "weight": 1.0
+        },
+        {
+          "text": "气温",
+          "weight": 0.95
+        },
+        {
+          "text": "下雨",
+          "weight": 0.9
+        },
+        {
+          "text": "weather",
+          "weight": 1.0
+        },
+        {
+          "text": "的呢",
+          "weight": 0.55
+        },
+        {
+          "text": "怎么样",
+          "weight": 0.5
+        }
+      ]
+    },
+    "news": {
+      "dialog_boost": 0.3,
+      "anchors": [
+        {
+          "text": "新闻",
+          "weight": 1.0
+        },
+        {
+          "text": "头条",
+          "weight": 0.95
+        },
+        {
+          "text": "热点",
+          "weight": 0.9
+        }
+      ]
+    },
+    "status": {
+      "anchors": [
+        {
+          "text": "状态",
+          "weight": 1.0
+        },
+        {
+          "text": "health",
+          "weight": 0.95
+        },
+        {
+          "text": "什么模型",
+          "weight": 0.9
+        }
+      ]
+    },
+    "media_capture_execute": {
+      "dialog_boost": 0.0,
+      "family": "media",
+      "side_effect": true,
+      "requires_dialogue_act": "command",
+      "anchors": [
+        {
+          "text": "拍张照片",
+          "weight": 1.0
+        },
+        {
+          "text": "拍一张",
+          "weight": 1.0
+        },
+        {
+          "text": "帮我拍",
+          "weight": 0.98
+        },
+        {
+          "text": "给我拍",
+          "weight": 0.98
+        },
+        {
+          "text": "来张照片",
+          "weight": 0.95
+        },
+        {
+          "text": "拍几张",
+          "weight": 0.92
+        },
+        {
+          "text": "拍两张",
+          "weight": 0.95
+        },
+        {
+          "text": "拍三张",
+          "weight": 0.95
+        },
+        {
+          "text": "拍五张",
+          "weight": 0.95
+        },
+        {
+          "text": "take a photo",
+          "weight": 1.0
+        },
+        {
+          "text": "take photo",
+          "weight": 0.95
+        }
+      ]
+    },
+    "media_capture_status": {
+      "dialog_boost": 0.45,
+      "family": "media",
+      "side_effect": false,
+      "requires_dialogue_act": "question",
+      "anchors": [
+        {
+          "text": "拍照完成了吗",
+          "weight": 1.0
+        },
+        {
+          "text": "拍好了吗",
+          "weight": 1.0
+        },
+        {
+          "text": "拍好了没",
+          "weight": 0.98
+        },
+        {
+          "text": "完成了吗",
+          "weight": 0.85
+        },
+        {
+          "text": "好了吗",
+          "weight": 0.8
+        },
+        {
+          "text": "成功了吗",
+          "weight": 0.9
+        },
+        {
+          "text": "结果呢",
+          "weight": 0.82
+        },
+        {
+          "text": "怎么样了",
+          "weight": 0.78
+        },
+        {
+          "text": "拍到了吗",
+          "weight": 0.95
+        }
+      ]
+    },
+    "media_recording_execute": {
+      "dialog_boost": 0.0,
+      "family": "media",
+      "side_effect": true,
+      "requires_dialogue_act": "command",
+      "anchors": [
+        {
+          "text": "开始录制",
+          "weight": 1.0
+        },
+        {
+          "text": "录一段视频",
+          "weight": 1.0
+        },
+        {
+          "text": "拍一段视频",
+          "weight": 0.98
+        },
+        {
+          "text": "录20秒",
+          "weight": 0.95
+        },
+        {
+          "text": "录像",
+          "weight": 0.9
+        },
+        {
+          "text": "start recording",
+          "weight": 1.0
+        },
+        {
+          "text": "record a video",
+          "weight": 0.95
+        }
+      ]
+    },
+    "media_plan": {
+      "dialog_boost": 0.0,
+      "family": "media",
+      "side_effect": true,
+      "requires_dialogue_act": "command",
+      "anchors": [
+        {
+          "text": "再拍一段",
+          "weight": 0.95
+        },
+        {
+          "text": "再录",
+          "weight": 0.9
+        },
+        {
+          "text": "然后录",
+          "weight": 0.9
+        },
+        {
+          "text": "拍完再录",
+          "weight": 0.95
+        },
+        {
+          "text": "先拍再录",
+          "weight": 0.95
+        }
+      ]
+    },
+    "search": {
+      "anchors": [
+        {
+          "text": "搜索",
+          "weight": 0.9
+        },
+        {
+          "text": "帮我搜",
+          "weight": 0.92
+        },
+        {
+          "text": "帮我查",
+          "weight": 0.9
+        },
+        {
+          "text": "搜一下",
+          "weight": 0.88
+        },
+        {
+          "text": "查一下",
+          "weight": 0.85
+        },
+        {
+          "text": "网上搜",
+          "weight": 0.92
+        },
+        {
+          "text": "检索",
+          "weight": 0.85
+        },
+        {
+          "text": "网上查",
+          "weight": 0.9
+        },
+        {
+          "text": "web search",
+          "weight": 0.9
+        },
+        {
+          "text": "search",
+          "weight": 0.85
+        },
+        {
+          "text": "web_search",
+          "weight": 0.88
+        }
+      ]
+    }
+  },
+  "keywords": {
+    "weather": [
+      "天气",
+      "气温",
+      "温度",
+      "下雨",
+      "空气质量",
+      "风力",
+      "体感",
+      "weather",
+      "wether"
+    ],
+    "news": [
+      "新闻",
+      "头条",
+      "快讯",
+      "热点",
+      "发生了什么",
+      "news",
+      "headline",
+      "headlines"
+    ],
+    "external_general": [
+      "查一下",
+      "搜一下",
+      "外部信息",
+      "最新消息",
+      "搜点",
+      "新消息"
+    ],
+    "general": [
+      "外部查询",
+      "泛检索",
+      "综合检索",
+      "帮我查一下"
+    ],
+    "profile": [
+      "thin agent",
+      "thin_agent",
+      "你是谁",
+      "你是哪个",
+      "你是什么",
+      "你是谁呀",
+      "介绍一下",
+      "介绍一下你自己",
+      "介绍一下自己",
+      "介绍你自己",
+      "自我介绍",
+      "介绍自己",
+      "自研",
+      "主体能力",
+      "你有哪些能力",
+      "你有什么能力",
+      "有哪些能力",
+      "有什么能力",
+      "能力有哪些",
+      "有哪些技能",
+      "你有什么技能",
+      "你的技能",
+      "技能有哪些",
+      "技能列表",
+      "什么技能",
+      "技能",
+      "怎么用你",
+      "怎么使用你",
+      "如何使用你",
+      "帮助手册",
+      "使用说明",
+      "帮助",
+      "详细能力",
+      "详细能力介绍",
+      "能力详情",
+      "详细介绍能力",
+      "详细介绍一下",
+      "你能做啥",
+      "你会干嘛",
+      "咋用你",
+      "who are you",
+      "who are u",
+      "who r u",
+      "what are you",
+      "what are u",
+      "what is your name",
+      "who is this",
+      "what is this",
+      "your name",
+      "tell me about yourself",
+      "introduce yourself",
+      "what can you do",
+      "what can you do for me",
+      "your capabilities",
+      "capabilities",
+      "skills",
+      "your skills",
+      "ur skills",
+      "what skills",
+      "detailed skills"
+    ],
+    "profile_short": [
+      "说说你自己",
+      "说说自己",
+      "介绍下自己",
+      "自我说明",
+      "detail ability",
+      "detailed ability",
+      "what can you do",
+      "what can you do for me",
+      "有哪些技能",
+      "有什么技能",
+      "技能有哪些",
+      "你有哪些技能",
+      "你有什么技能",
+      "你有哪些能力",
+      "你有什么能力",
+      "有哪些能力",
+      "有什么能力",
+      "你的技能",
+      "你有什么功能",
+      "有哪些功能"
+    ],
+    "profile_detail": [
+      "详细能力",
+      "详细能力介绍",
+      "能力详情",
+      "详细介绍能力",
+      "详细介绍一下",
+      "detail ability",
+      "detailed ability",
+      "full capability",
+      "detailed capability",
+      "detailed skills",
+      "detail skills",
+      "detailed capabilities",
+      "全部技能",
+      "所有技能",
+      "完整技能",
+      "功能列表",
+      "技能详情",
+      "技能列表",
+      "all skills",
+      "complete skills",
+      "full skills"
+    ],
+    "status": [
+      "状态",
+      "status",
+      "健康",
+      "health",
+      "运行情况",
+      "啥状态",
+      "运行正常吗",
+      "什么模型",
+      "什么大模型",
+      "你是什么模型",
+      "当前模型",
+      "model"
+    ],
+    "model_status": [
+      "什么模型",
+      "什么大模型",
+      "你是什么模型",
+      "你的模型",
+      "当前模型",
+      "本地模型",
+      "端侧模型",
+      "用的什么模型",
+      "onnx模型",
+      "onnx 模型",
+      "model",
+      "runtime"
+    ],
+    "event": [
+      "最近事件",
+      "event",
+      "事件"
+    ],
+    "memory_recent": [
+      "短期记忆",
+      "memory_recent",
+      "会话记忆"
+    ],
+    "memory_history": [
+      "长期记忆",
+      "memory_history",
+      "历史记忆"
+    ],
+    "memory_search": [
+      "记忆检索",
+      "memory_search"
+    ],
+    "memory_summary": [
+      "记忆摘要",
+      "memory_summary"
+    ],
+    "status_advice_suggest": [
+      "建议",
+      "更建议",
+      "还是"
+    ],
+    "status_advice_status": [
+      "状态"
+    ],
+    "status_advice_task_exec": [
+      "任务",
+      "执行"
+    ],
+    "task_capture_inline": [
+      "帮我拍",
+      "拍一张照",
+      "拍张照",
+      "拍张照片",
+      "来张照片",
+      "拍一张",
+      "拍照并告诉我结果",
+      "提交任务",
+      "任务拍照",
+      "拍照任务"
+    ],
+    "task_start_recording_inline": [
+      "开始录制任务",
+      "录制任务",
+      "帮我开始录制并告诉我结果"
+    ],
+    "action_capture": [
+      "拍照",
+      "拍张照",
+      "拍张照片",
+      "capture_photo"
+    ],
+    "action_start_recording": [
+      "录制",
+      "开始录制",
+      "start_recording"
+    ],
+    "general_info_query_include": [
+      "进展",
+      "动态",
+      "情况",
+      "最近",
+      "如何",
+      "总结",
+      "概况",
+      "消息",
+      "查",
+      "搜"
+    ],
+    "general_info_query_exclude": [
+      "天气",
+      "气温",
+      "新闻",
+      "头条",
+      "状态",
+      "health",
+      "执行",
+      "任务",
+      "拍照",
+      "录制",
+      "删除",
+      "清空",
+      "转账",
+      "密钥",
+      "密码",
+      "重启",
+      "kill",
+      "rm "
+    ],
+    "search": [
+      "搜索一下",
+      "搜索什么",
+      "帮我搜索",
+      "网上搜索",
+      "检索一下",
+      "网上查询一下",
+      "web search",
+      "web_search"
+    ],
+    "complex_task": [
+      "重构",
+      "多文件",
+      "分多个文件",
+      "任务分解",
+      "分步骤实现",
+      "三件套",
+      "拆分实现",
+      "整体迁移",
+      "分阶段实现",
+      "先规划再实现",
+      "refactor",
+      "multi-file",
+      "break down the task",
+      "step-by-step plan"
+    ],
+    "autonomy": [
+      "监控",
+      "巡检",
+      "patrol",
+      "monitor",
+      "快照",
+      "遗忘",
+      "摘要目标",
+      "自动执行",
+      "snapshot_now",
+      "memory_forget",
+      "patrol_now"
+    ]
+  },
+  "nlp": {
+    "query_filler_prefix": [
+      "请",
+      "帮我",
+      "给我",
+      "麻烦",
+      "做",
+      "进行",
+      "来个",
+      "来一段",
+      "一下",
+      "下",
+      "please",
+      "do",
+      "run"
+    ],
+    "chat_abbreviations": {
+      "u": "you",
+      "r": "are",
+      "ur": "your",
+      "plz": "please",
+      "pls": "please",
+      "thx": "thanks",
+      "tnx": "thanks",
+      "b4": "before",
+      "cuz": "because",
+      "coz": "because",
+      "l8r": "later",
+      "gonna": "going to",
+      "wanna": "want to",
+      "kinda": "kind of",
+      "dunno": "do not know",
+      "y": "why",
+      "n": "and"
+    }
+  },
+  "slots": {
+    "weather": {
+      "cities": [
+        {
+          "aliases": [
+            "上海"
+          ],
+          "value": "上海"
+        },
+        {
+          "aliases": [
+            "北京"
+          ],
+          "value": "北京"
+        },
+        {
+          "aliases": [
+            "深圳"
+          ],
+          "value": "深圳"
+        },
+        {
+          "aliases": [
+            "广州"
+          ],
+          "value": "广州"
+        },
+        {
+          "aliases": [
+            "杭州"
+          ],
+          "value": "杭州"
+        },
+        {
+          "aliases": [
+            "苏州"
+          ],
+          "value": "苏州"
+        },
+        {
+          "aliases": [
+            "成都"
+          ],
+          "value": "成都"
+        },
+        {
+          "aliases": [
+            "武汉"
+          ],
+          "value": "武汉"
+        },
+        {
+          "aliases": [
+            "南京"
+          ],
+          "value": "南京"
+        },
+        {
+          "aliases": [
+            "重庆"
+          ],
+          "value": "重庆"
+        },
+        {
+          "aliases": [
+            "shanghai"
+          ],
+          "value": "Shanghai",
+          "match_lower": true
+        },
+        {
+          "aliases": [
+            "beijing"
+          ],
+          "value": "Beijing",
+          "match_lower": true
+        },
+        {
+          "aliases": [
+            "shenzhen"
+          ],
+          "value": "Shenzhen",
+          "match_lower": true
+        },
+        {
+          "aliases": [
+            "guangzhou"
+          ],
+          "value": "Guangzhou",
+          "match_lower": true
+        },
+        {
+          "aliases": [
+            "hangzhou"
+          ],
+          "value": "Hangzhou",
+          "match_lower": true
+        },
+        {
+          "aliases": [
+            "suzhou"
+          ],
+          "value": "Suzhou",
+          "match_lower": true
+        },
+        {
+          "aliases": [
+            "chengdu"
+          ],
+          "value": "Chengdu",
+          "match_lower": true
+        },
+        {
+          "aliases": [
+            "wuhan"
+          ],
+          "value": "Wuhan",
+          "match_lower": true
+        },
+        {
+          "aliases": [
+            "nanjing"
+          ],
+          "value": "Nanjing",
+          "match_lower": true
+        },
+        {
+          "aliases": [
+            "chongqing"
+          ],
+          "value": "Chongqing",
+          "match_lower": true
+        },
+        {
+          "aliases": [
+            "berlin"
+          ],
+          "value": "Berlin",
+          "match_lower": true
+        },
+        {
+          "aliases": [
+            "hong kong"
+          ],
+          "value": "Hong Kong",
+          "match_lower": true
+        },
+        {
+          "aliases": [
+            "台北",
+            "台湾",
+            "台灣"
+          ],
+          "value": "台北"
+        },
+        {
+          "aliases": [
+            "taipei",
+            "taiwan"
+          ],
+          "value": "Taipei",
+          "match_lower": true
+        }
+      ],
+      "date_aliases": [
+        {
+          "match": [
+            "今天",
+            "今日"
+          ],
+          "value": "今天"
+        },
+        {
+          "match": [
+            "明天"
+          ],
+          "value": "明天"
+        }
+      ],
+      "followup_suffixes": [
+        "的呢",
+        "的天气",
+        "天气",
+        "呢",
+        "怎么样",
+        "如何"
+      ],
+      "trailing_particles": [
+        "的"
+      ],
+      "confirm_replies": [
+        "需要",
+        "好的",
+        "好",
+        "行",
+        "是",
+        "是的",
+        "对",
+        "对的",
+        "yes",
+        "ok",
+        "okay",
+        "yep",
+        "yeah",
+        "要",
+        "可以",
+        "可",
+        "嗯"
+      ],
+      "extra_triggers": [
+        "weather",
+        "wether"
+      ],
+      "query_suffix": "的天气"
+    },
+    "news": {
+      "topics": [
+        {
+          "aliases": [
+            "ai"
+          ],
+          "value": "AI",
+          "match_lower": true
+        },
+        {
+          "aliases": [
+            "科技"
+          ],
+          "value": "科技"
+        },
+        {
+          "aliases": [
+            "财经"
+          ],
+          "value": "财经"
+        },
+        {
+          "aliases": [
+            "金融"
+          ],
+          "value": "财经"
+        },
+        {
+          "aliases": [
+            "国际"
+          ],
+          "value": "国际"
+        },
+        {
+          "aliases": [
+            "本地"
+          ],
+          "value": "本地"
+        },
+        {
+          "aliases": [
+            "上海"
+          ],
+          "value": "上海本地"
+        },
+        {
+          "aliases": [
+            "体育"
+          ],
+          "value": "体育"
+        }
+      ],
+      "time_range_aliases": [
+        {
+          "match": [
+            "今天",
+            "今日"
+          ],
+          "value": "今天"
+        },
+        {
+          "match": [
+            "最近",
+            "近24小时",
+            "24小时"
+          ],
+          "value": "最近"
+        }
+      ],
+      "followup_suffixes": [
+        "新闻",
+        "消息",
+        "呢",
+        "方面的"
+      ],
+      "query_suffix": "新闻"
+    }
+  },
+  "profile": {
+    "detail_markers": [
+      "详细",
+      "detailed",
+      "detail",
+      "full"
+    ]
+  },
+  "localization": {
+    "cities_zh": {
+      "berlin": "柏林",
+      "shanghai": "上海",
+      "beijing": "北京",
+      "peking": "北京",
+      "shenzhen": "深圳",
+      "guangzhou": "广州",
+      "hangzhou": "杭州",
+      "suzhou": "苏州",
+      "chengdu": "成都",
+      "wuhan": "武汉",
+      "nanjing": "南京",
+      "chongqing": "重庆",
+      "hong kong": "香港",
+      "taipei": "台北",
+      "local": "本地"
+    },
+    "weather_zh": {
+      "Sunny": "晴",
+      "Clear": "晴",
+      "Partly cloudy": "多云",
+      "Partly Cloudy": "多云",
+      "Cloudy": "阴",
+      "Overcast": "阴",
+      "Mist": "薄雾",
+      "Fog": "雾",
+      "Light rain": "小雨",
+      "Light Rain": "小雨",
+      "Light Rain Shower": "小阵雨",
+      "Moderate rain": "中雨",
+      "Moderate Rain": "中雨",
+      "Heavy rain": "大雨",
+      "Heavy Rain": "大雨",
+      "Heavy Rain Shower": "大阵雨",
+      "Patchy rain possible": "局部降雨",
+      "Patchy rain nearby": "局部降雨",
+      "Light drizzle": "毛毛雨",
+      "Light Drizzle": "毛毛雨",
+      "Thunderstorm": "雷暴",
+      "Thundery outbreaks possible": "可能有雷暴",
+      "Thundery outbreaks in nearby": "附近有雷雨",
+      "Thundery outbreaks nearby": "附近有雷雨",
+      "Snow": "雪",
+      "Light snow": "小雪",
+      "Heavy snow": "大雪",
+      "Blizzard": "暴风雪",
+      "Sleet": "雨夹雪",
+      "Smoky haze": "霾",
+      "Haze": "霾",
+      "Smoke": "烟霾",
+      "Rain Shower": "阵雨",
+      "Rain shower": "阵雨",
+      "Moderate or heavy rain shower": "中到大阵雨",
+      "Torrential rain shower": "暴雨",
+      "Patchy light rain": "局部小雨",
+      "Freezing fog": "冻雾",
+      "Freezing drizzle": "冻毛毛雨"
+    },
+    "weather_zh_rules": [
+      {
+        "contains": [
+          "thundery",
+          "nearby"
+        ],
+        "value": "附近有雷雨"
+      },
+      {
+        "contains": [
+          "thundery",
+          "outbreak"
+        ],
+        "value": "可能有雷暴"
+      },
+      {
+        "contains": [
+          "thunderstorm",
+          "light rain"
+        ],
+        "value": "雷阵雨"
+      },
+      {
+        "contains": [
+          "thunderstorm"
+        ],
+        "value": "雷暴"
+      },
+      {
+        "contains": [
+          "heavy rain"
+        ],
+        "value": "大雨"
+      },
+      {
+        "contains": [
+          "light rain"
+        ],
+        "value": "小雨"
+      },
+      {
+        "contains": [
+          "overcast"
+        ],
+        "value": "阴"
+      },
+      {
+        "contains": [
+          "cloudy"
+        ],
+        "value": "多云"
+      },
+      {
+        "contains": [
+          "sunny"
+        ],
+        "value": "晴"
+      },
+      {
+        "contains": [
+          "clear"
+        ],
+        "value": "晴"
+      }
+    ]
+  },
+  "languages": {
+    "template_codes": [
+      "en",
+      "zh",
+      "zh-TW",
+      "ja",
+      "ko",
+      "th",
+      "de",
+      "fr",
+      "nl",
+      "sv",
+      "ru",
+      "it",
+      "es",
+      "pt"
+    ],
+    "latin_hints": {
+      "de": [
+        "wetter",
+        "wie ist",
+        "guten"
+      ],
+      "fr": [
+        "météo",
+        "meteo",
+        "bonjour",
+        "quel temps",
+        "presentez",
+        "actualites",
+        "actualités",
+        "recentes"
+      ],
+      "es": [
+        "tiempo",
+        "hola",
+        "noticias"
+      ],
+      "it": [
+        "tempo",
+        "ciao",
+        "notizie"
+      ],
+      "pt": [
+        "tempo",
+        "olá",
+        "ola",
+        "notícias"
+      ],
+      "nl": [
+        "weer",
+        "hallo"
+      ],
+      "sv": [
+        "väder",
+        "vader",
+        "hej"
+      ],
+      "pl": [
+        "pogoda",
+        "jaka",
+        "opowiedz",
+        "sobie"
+      ],
+      "da": [
+        "nyhed",
+        "vejr"
+      ],
+      "ms": [
+        "cuaca",
+        "berita"
+      ]
+    },
+    "supported": [
+      {
+        "code": "en",
+        "label_zh": "英语",
+        "label_en": "English"
+      },
+      {
+        "code": "zh",
+        "label_zh": "简体中文",
+        "label_en": "Simplified Chinese"
+      },
+      {
+        "code": "zh-TW",
+        "label_zh": "繁体中文",
+        "label_en": "Traditional Chinese"
+      },
+      {
+        "code": "ja",
+        "label_zh": "日语",
+        "label_en": "Japanese"
+      },
+      {
+        "code": "ko",
+        "label_zh": "韩语",
+        "label_en": "Korean"
+      },
+      {
+        "code": "th",
+        "label_zh": "泰语",
+        "label_en": "Thai"
+      },
+      {
+        "code": "de",
+        "label_zh": "德语",
+        "label_en": "German"
+      },
+      {
+        "code": "fr",
+        "label_zh": "法语",
+        "label_en": "French"
+      },
+      {
+        "code": "nl",
+        "label_zh": "荷兰语",
+        "label_en": "Dutch"
+      },
+      {
+        "code": "sv",
+        "label_zh": "瑞典语",
+        "label_en": "Swedish"
+      },
+      {
+        "code": "ru",
+        "label_zh": "俄语",
+        "label_en": "Russian"
+      },
+      {
+        "code": "it",
+        "label_zh": "意大利语",
+        "label_en": "Italian"
+      },
+      {
+        "code": "es",
+        "label_zh": "西班牙语",
+        "label_en": "Spanish"
+      },
+      {
+        "code": "pt",
+        "label_zh": "葡萄牙语",
+        "label_en": "Portuguese"
+      },
+      {
+        "code": "ar",
+        "label_zh": "阿拉伯语",
+        "label_en": "Arabic"
+      },
+      {
+        "code": "pl",
+        "label_zh": "波兰语",
+        "label_en": "Polish"
+      },
+      {
+        "code": "ms",
+        "label_zh": "马来语",
+        "label_en": "Malay"
+      },
+      {
+        "code": "vi",
+        "label_zh": "越南语",
+        "label_en": "Vietnamese"
+      },
+      {
+        "code": "fi",
+        "label_zh": "芬兰语",
+        "label_en": "Finnish"
+      },
+      {
+        "code": "no",
+        "label_zh": "挪威语",
+        "label_en": "Norwegian"
+      },
+      {
+        "code": "da",
+        "label_zh": "丹麦语",
+        "label_en": "Danish"
+      },
+      {
+        "code": "cs",
+        "label_zh": "捷克语",
+        "label_en": "Czech"
+      },
+      {
+        "code": "hu",
+        "label_zh": "匈牙利语",
+        "label_en": "Hungarian"
+      },
+      {
+        "code": "sk",
+        "label_zh": "斯洛伐克语",
+        "label_en": "Slovak"
+      },
+      {
+        "code": "lt",
+        "label_zh": "立陶宛语",
+        "label_en": "Lithuanian"
+      },
+      {
+        "code": "lv",
+        "label_zh": "拉脱维亚语",
+        "label_en": "Latvian"
+      },
+      {
+        "code": "et",
+        "label_zh": "爱沙尼亚语",
+        "label_en": "Estonian"
+      },
+      {
+        "code": "kk",
+        "label_zh": "哈萨克语",
+        "label_en": "Kazakh"
+      },
+      {
+        "code": "uk",
+        "label_zh": "乌克兰语",
+        "label_en": "Ukrainian"
+      }
+    ],
+    "query_keywords": [
+      "支持哪些语言",
+      "支持什么语言",
+      "多少种语言",
+      "几种语言",
+      "能说哪些语言",
+      "会哪些语言",
+      "支持的语言",
+      "what languages",
+      "which languages",
+      "language support",
+      "supported languages",
+      "how many languages",
+      "対応言語",
+      "サポート言語",
+      "지원 언어",
+      "언어 지원"
+    ],
+    "traditional_markers": [
+      "繁體",
+      "繁体",
+      "臺灣",
+      "台湾",
+      "香港",
+      "澳門",
+      "澳门",
+      "軟體",
+      "軟件",
+      "網路",
+      "程式",
+      "資訊",
+      "電腦",
+      "視訊"
+    ],
+    "supported_answer_zh": "我支持以下 {count} 种语言进行交流：\n{list}\n您可以直接用其中任意一种语言向我提问。",
+    "supported_answer_en": "I support {count} languages:\n{list}\nFeel free to ask in any of them.",
+    "supported_answer_zh-TW": "我支援以下 {count} 種語言進行交流：\n{list}\n您可以直接用其中任一種語言向我提問。"
+  },
+  "meta_questions": {
+    "cloud_keywords": [
+      "云端",
+      "云模型",
+      "大模型",
+      "转云端",
+      "cloud",
+      "还会用云",
+      "不会用云",
+      "都不会用",
+      "不用云",
+      "用云",
+      "走云",
+      "调用云",
+      "连不上云"
+    ],
+    "identity_exclude": [
+      "你是谁",
+      "你是哪个",
+      "介绍自己",
+      "自我介绍",
+      "who are you",
+      "what are you"
+    ]
+  },
+  "routing": {
+    "cloud_allowed_route_hints": [
+      "",
+      "local_profile",
+      "local_status",
+      "local_memory",
+      "local_memory_recent",
+      "local_memory_history",
+      "local_supported_languages",
+      "local_external_weather",
+      "local_external_news",
+      "local_task_inline_capture_photo",
+      "local_task_inline_start_recording"
+    ],
+    "complex_intent_markers": [
+      {
+        "text": "如果",
+        "tag": "cn_if"
+      },
+      {
+        "text": "先",
+        "tag": "cn_first"
+      },
+      {
+        "text": "然后",
+        "tag": "cn_then"
+      },
+      {
+        "text": "再",
+        "tag": "cn_then_zai"
+      },
+      {
+        "text": "否则",
+        "tag": "cn_else"
+      },
+      {
+        "text": "if",
+        "tag": "en_if"
+      },
+      {
+        "text": "then",
+        "tag": "en_then"
+      },
+      {
+        "text": "else",
+        "tag": "en_else"
+      }
+    ],
+    "cloud_parse_heuristics": {
+      "clarify": [
+        "clarify",
+        "need clarify",
+        "澄清",
+        "请确认",
+        "需要确认",
+        "ask user"
+      ],
+      "local_status": [
+        "route:local_status",
+        "local_status route"
+      ],
+      "local_profile": [
+        "route:local_profile",
+        "local_profile route",
+        "who are you",
+        "你是谁",
+        "你有哪些能力"
+      ],
+      "local_task_capture": [
+        "route:capture_photo",
+        "route:local_task_inline_capture_photo"
+      ],
+      "local_task_recording": [
+        "route:start_recording",
+        "route:local_task_inline_start_recording"
+      ],
+      "high_risk": [
+        "high risk",
+        "高风险",
+        "sensitive",
+        "敏感"
+      ],
+      "low_risk": [
+        "low risk",
+        "低风险"
+      ],
+      "reject": [
+        "reject",
+        "deny",
+        "blocked",
+        "refuse",
+        "拒绝",
+        "阻断",
+        "禁止"
+      ]
+    },
+    "local_route_hint_whitelist": [
+      "local_external_search"
+    ]
+  },
+  "templates": {
+    "profile.concise": "(fallback: role-driven profile unavailable — see build_profile_body)",
+    "profile.detailed": "(fallback: role-driven detailed profile unavailable — see build_profile_body)",
+    "profile.concise_en": "(fallback: role-driven profile unavailable — see build_profile_body)",
+    "profile.detailed_en": "(fallback: role-driven detailed profile unavailable — see build_profile_body)",
+    "status.summary": "thin_agent 运行中\n- 模式：{mode}\n- 模型：{model}\n- 提供商：{provider}",
+    "status.summary_en": "thin_agent running\n- Mode: {mode}\n- Model: {model}\n- Provider: {provider}",
+    "status.local_runtime": "本地运行时说明：\n- 对话 LLM：{model}（{provider}，模式 {mode}）\n- 意图分类：ONNX 本地模型 intent_multiclass.onnx（THIN_AGENT_INTENT_ONNX=1 时启用）\n- 规则引擎：chat_policy.json 关键词与槽位",
+    "status.onnx_explainer": "ONNX 在这里指本地意图分类模型（intent_multiclass.onnx），用于在规则/模糊打分之后做 profile/weather/news/status 等可执行意图的轻量判别；它不是对话大模型本身。当前对话 LLM 为 {model}（{provider}，模式 {mode}）。",
+    "chat.short_ack": [
+      "收到。",
+      "好的，明白。",
+      "嗯，知道了。"
+    ],
+    "chat.messaging_capability_clarify": [
+      "你是想看会话消息、记忆检索，还是新闻查询？",
+      "你要查的是消息记录、记忆，还是新闻？",
+      "想看消息、记忆还是新闻？我按你的方向继续。"
+    ],
+    "event.summary": "最近事件已整理好。",
+    "event.list_header": "最近事件（{count} 条）:\n",
+    "event.empty": "(无)",
+    "memory.recent.list_header": "会话短期记忆（{count} 条）:\n",
+    "memory.recent.empty": "(暂无)",
+    "memory.history.list_header": "长期记忆历史（{count} 条）:\n",
+    "memory.history.empty": "(暂无)",
+    "memory.search.no_match": "未检索到匹配记忆。",
+    "memory.search.hit": "命中{count}条记忆",
+    "memory.recent_summary": "给你整理了当前会话记忆。",
+    "memory.history_summary": "给你整理了历史记忆（最近20条）。",
+    "memory.search_summary": "给你找到了相关记忆。",
+    "memory.summary_summary": "记忆摘要整理好了。",
+    "memory.maintenance_conclusion": "维护结论：task/audit 命中 {total_hits} 条（task={task_hits}，audit={audit_hits}），query={query}，limit={limit}。",
+    "memory.maintenance_evidence": "证据点：#1 {top1}{latest_tag}；#2 {top2}",
+    "memory.maintenance_summary_evidence": "证据点：latest={latest_task_id}/{latest_kind}/{latest_row_ref}",
+    "general.clarify": "我可以帮你外部查询。请补充关键词和范围（时间/地区/主题）。",
+    "cloud.clarify_prefix": "",
+    "cloud.clarify_default_question": "这个问题我需要再确认一下你的目标：你是想查本地状态、能力，还是执行一个具体任务？",
+    "cloud.policy_contract_violation": "云策略字段不合规，已降级本地澄清。",
+    "task.engine_unavailable": "检测到任务类表达，但 task_engine 未就绪，无法提交任务。",
+    "task.capture_submitted": "已通过 Agent 任务引擎执行拍照任务。task_id={task_id}，当前状态={state}。",
+    "task.start_recording_submitted": "已通过 Agent 任务引擎执行开始录制任务。task_id={task_id}，当前状态={state}。",
+    "action.capture_ok": "已通过本地 Agent 执行拍照动作。",
+    "action.capture_fail": "拍照动作已下发，但执行返回非0，请查看 observation.result。",
+    "action.start_recording_ok": "已通过本地 Agent 执行开始录制动作。",
+    "media.capability": "可以。我支持拍照与录像；直接说「拍一张」或「录20秒视频」即可执行。",
+    "media.status_ok": "最近一次媒体任务状态：action={action}，task_id={task_id}，state={state}。",
+    "media.status_empty": "当前没有可查询的拍照/录像任务记录。若要拍照，请直接说「拍一张」。",
+    "media.question_blocked": "这句更像是在询问，而不是下指令。若要执行请直接说「拍一张」或「开始录制」；若问结果可以说「拍照完成了吗」。",
+    "media.ambiguous_clarify": "这句话有点含糊。若要拍照请直接说「拍一张」；若要录像说「录20秒」；若问结果可以说「拍照完成了吗」。",
+    "media.pipeline_ok": "已按计划执行媒体任务：共 {step_count} 步，完成 {completed} 步。",
+    "media.pipeline_fail": "媒体计划执行到第 {failed_at} 步失败，已停止后续步骤。",
+    "weather.clarify": [
+      "哪个城市？比如上海朝阳。",
+      "你想查哪儿？报个城市我就去查。",
+      "给个城市名，我帮你看看天气。"
+    ],
+    "weather.clarify_en": [
+      "Which city? For example, Shanghai.",
+      "Tell me a city and I'll check the weather.",
+      "Give me a city name and I'll look it up."
+    ],
+    "weather.location_recall": "刚才最后显示的是{city}的天气。",
+    "weather.location_recall_en": "The last weather I showed was for {city}.",
+    "news.topic_recall": "刚才最后查的是{topic}方向的新闻。",
+    "news.topic_recall_en": "The last news I looked up was about {topic}.",
+    "weather.fetch_failed": [
+      "天气暂时查不到，换个城市试试？",
+      "这会儿查不了天气，稍等再试。"
+    ],
+    "weather.fetch_failed_en": [
+      "Can't fetch the weather right now, try another city?",
+      "Weather service is busy, please try again later."
+    ],
+    "weather.summary": [
+      "{city}{date}{condition}，{temp_c}°C，湿度{humidity}%。",
+      "刚查了{city}：{condition}，{temp_c}°C，湿度大概{humidity}%。",
+      "{city}这会儿{condition}，{temp_c}°C。"
+    ],
+    "weather.summary_en": [
+      "{city} {date}: {condition}, {temp_c}°C, humidity {humidity}%.",
+      "Just checked {city}: {condition}, around {temp_c}°C."
+    ],
+    "news.clarify": [
+      "想看哪个方向？科技、AI、财经都行。",
+      "什么主题？AI、科技、财经随便挑。"
+    ],
+    "news.clarify_en": [
+      "What topic? Tech, AI, finance — pick one.",
+      "Which direction? Tech, AI, finance, anything."
+    ],
+    "news.fetch_failed": [
+      "新闻服务有点忙，稍等再试？",
+      "暂时刷不出新闻，换个主题试试？"
+    ],
+    "news.fetch_failed_en": [
+      "News service is busy, try again later?",
+      "Can't fetch news right now, try a different topic?"
+    ],
+    "news.summary": [
+      "{topic}方向：\n▸ {top1}\n▸ {top2}",
+      "给你找了两条{topic}的：\n▸ {top1}\n▸ {top2}",
+      "刚扫了眼{topic}：{top1}。还有一条{top2}。"
+    ],
+    "news.summary_en": [
+      "{topic} news:\n▸ {top1}\n▸ {top2}",
+      "Here's what I found on {topic}:\n▸ {top1}\n▸ {top2}",
+      "Just scanned {topic}: {top1}. Also: {top2}."
+    ],
+    "news.summary_single": [
+      "只找到一条{topic}的：\n▸ {top1}",
+      "搜到一条{topic}相关：\n▸ {top1}"
+    ],
+    "news.summary_single_en": [
+      "Only one {topic} result:\n▸ {top1}",
+      "Found one {topic} story:\n▸ {top1}"
+    ],
+    "news.empty_item": "暂无",
+    "weather.advice.35.zh": "🔥 {city}当前{temp_c}°C，天气{condition}。建议穿轻薄透气的短袖短裤，戴遮阳帽和墨镜，注意防暑降温，尽量避免正午户外活动。",
+    "weather.advice.35.en": "🔥 It's about {temp_c}°C in {city} with {condition}. Wear light breathable clothes, a hat and sunglasses, and avoid midday outdoor activity.",
+    "weather.advice.28.zh": "☀️ {city}当前{temp_c}°C，天气{condition}。建议穿短袖或薄衬衫，搭配轻薄长裤或短裤，带把遮阳伞。",
+    "weather.advice.28.en": "☀️ It's about {temp_c}°C in {city} with {condition}. T-shirt or light shirt with shorts or light pants works well; bring a sun umbrella.",
+    "weather.advice.20.zh": "🌤 {city}当前{temp_c}°C，天气{condition}。建议穿长袖T恤或薄外套，搭配长裤，舒适出行。",
+    "weather.advice.20.en": "🌤 It's about {temp_c}°C in {city} with {condition}. A long-sleeve tee or light jacket with trousers should be comfortable.",
+    "weather.advice.10.zh": "🍂 {city}当前{temp_c}°C，天气{condition}。建议穿毛衣或夹克，注意保暖。",
+    "weather.advice.10.en": "🍂 It's about {temp_c}°C in {city} with {condition}. Wear a sweater or jacket to stay warm.",
+    "weather.advice.cold.zh": "❄️ {city}当前{temp_c}°C，天气{condition}。建议穿厚外套或羽绒服，围巾手套也带上。",
+    "weather.advice.cold.en": "❄️ It's about {temp_c}°C in {city} with {condition}. Wear a thick coat or down jacket, scarf and gloves.",
+    "weather.advice.rain_extra.zh": " 湿度较高且有雨，记得带伞！",
+    "weather.advice.rain_extra.en": " Humidity is high with rain — bring an umbrella.",
+    "cloud.strategist_system": "你是 thin_agent 嵌入式智能体的云端策略顾问。只输出一个 JSON 对象，不要 markdown 或其它前后缀文字。\n必填字段：strategy, intent, confidence, risk, local_route_hint, need_clarify, clarify_question, response_draft\nstrategy 取值：answer_direct | clarify | reject\nidentity/profile/你是谁 类：local_route_hint 必须为 local_profile，禁止在 response_draft 中自称其它大模型名称。\n编程/知识/闲聊等开放问题：strategy=answer_direct，local_route_hint 留空，response_draft 写完整回答。",
+    "cloud.classify_system": "你是 thin_agent 的云端意图分类器（Tier 2 / Media Router）。只输出一个 JSON 对象，不要 markdown 或其它前后缀。\n必填字段：intent, confidence, slots, reasoning\n可选字段：dialogue_act, task_pipeline, need_clarify, clarify_question\nintent 取值：profile | weather | news | status | general | memory_recent | memory_history | event_recent | media_capture_execute | media_capture_status | media_recording_execute | media_plan | unknown\ndialogue_act 取值：command | question（媒体相关时必填）\nconfidence 为 0~1 浮点数。slots 为对象：天气用 city/date（字符串，禁止 null），新闻用 topic_or_scope/time_range，profile 可用 profile_mode=concise|detailed；媒体可用 count/duration_sec。\ntask_pipeline 为可选数组，元素形如 {\"action\":\"capture_photo|start_recording|stop_recording\",\"params\":{...}}。\n结合 recent_turns 与 dialog_state 理解指代（如「深圳的呢」补 city）。若用户问「刚才/最后显示的是哪里的天气」等回忆上一次天气城市，intent 必须为 memory_recent（不要 weather）。\n媒体歧义规则：含「要不要/还是/或者/也许/先不」等犹豫或二选一时，若无法确定执行意图则 need_clarify=true 并给出 clarify_question；明确指令用 media_capture_execute/media_recording_execute/media_plan 且 dialogue_act=command；问结果用 media_capture_status 且 dialogue_act=question。开放编程/知识问答若无法映射到上述意图，intent=general 且 confidence 偏低。",
+    "cloud.meta_answer": "当前处于 {mode} 模式，云模型为 {model}（{provider}）。身份/状态/天气/新闻等仍由本地策略优先处理；开放问答（如代码、知识）会调用云模型。",
+    "cloud.reject": "[端云协同-本地裁决] 当前请求被本地策略拒绝执行：存在高风险/敏感操作。请改为更具体且低风险的目标。",
+    "cloud.reject_downgrade_clarify": "[端云协同-本地裁决] 这类信息检索请求我先不直接拒绝。请补充你关注的范围（时间/模块/地区），我就继续帮你查。",
+    "cloud.status_local": "[端云协同-本地裁决] thin_agent 运行中\n- 模式：{mode}\n- 模型：{model}\n- 提供商：{provider}",
+    "cloud.task_inline_reject": "[端云协同-本地裁决] 检测到云策略建议执行任务，但本地 task_engine 未就绪，已拒绝执行。",
+    "cloud.task_inline_submitted": "[端云协同-本地裁决] 已按云策略建议执行本地任务。action={action}，task_id={task_id}，state={state}。",
+    "cloud.task_pipeline_reject": "[端云协同-本地裁决] 检测到云策略建议执行任务流水线，但本地 task_engine 未就绪，已拒绝执行。",
+    "cloud.task_pipeline_submitted": "[端云协同-本地裁决] 已按云策略顺序执行任务流水线。step_count={step_count}，completed={completed}。",
+    "cloud.task_pipeline_failed": "[端云协同-本地裁决] 已按云策略执行任务流水线，但在第{failed_at}步失败并停止后续步骤。",
+    "cloud.offline_local_fallback": "[offline-fallback] 当前离线模式。可执行本地动作，并可后续切换云模型。输入回显：{text}",
+    "cloud.fallback_missing_key": "[offline-fallback] 未检测到云模型密钥，已回退离线模式。输入回显：{text}",
+    "cloud.fallback_call_failed": "[offline-fallback] 云调用失败，已回退离线模式。输入回显：{text}",
+    "cloud.error_call_failed_no_fallback": "[cloud-error] 云调用失败且未允许离线回退。",
+    "cloud.missing_key_fallback": "[offline-fallback] 未检测到云模型密钥，已回退离线模式。输入回显：{text}",
+    "cloud.call_failed_fallback": "[offline-fallback] 云调用失败，已回退离线模式。输入回显：{text}",
+    "cloud.call_failed_no_fallback": "[cloud-error] 云调用失败且未允许离线回退。",
+    "cloud.answer_prefix": "[端云协同-本地裁决] ",
+    "search": {
+      "clarify": "你想搜索什么？",
+      "fetch_failed": "搜索失败，请稍后再试。",
+      "summary": "{summary}"
+    }
+  },
+  "offline_general": {
+    "unknown": "我当前处于离线模式，暂时无法回答这个问题。\n\n你可以试试：\n• 状态 — 查看运行状态\n• 天气 城市名 — 查询天气\n• 短期记忆 — 查看最近对话\n• 历史记忆 — 查看长期记忆\n• 帮助 — 查看离线功能列表",
+    "rules": [
+      {
+        "keywords": [
+          "你好",
+          "hi",
+          "hello",
+          "嗨"
+        ],
+        "reply": "你好！我正在离线模式下运行。虽然没有云端大模型可用，但我可以帮你查询本地状态、天气、记忆等信息。输入「帮助」查看完整功能列表。"
+      },
+      {
+        "keywords": [
+          "帮助",
+          "help",
+          "能做什么",
+          "功能",
+          "？"
+        ],
+        "reply": "离线模式下可用功能：\n• 状态查询 — 输入「状态」或「模型」\n• 天气查询 — 输入「城市名+天气」，如「北京天气」\n• 短期记忆 — 输入「短期记忆」\n• 历史记忆 — 输入「历史记忆」\n• 记忆搜索 — 输入「搜索记忆 关键词」\n• 事件记录 — 输入「最近事件」\n• 设备控制 — 输入「拍照」「录像」\n\n如需更复杂的回答，请连接云端大模型后重试。"
+      },
+      {
+        "keywords": [
+          "天气",
+          "天况",
+          "气温"
+        ],
+        "reply": "离线模式下的天气数据为模拟数据。如需准确信息，请连接云端服务后重试。你可以输入「城市名+天气」如「北京天气」来查询。"
+      },
+      {
+        "keywords": [
+          "状态",
+          "模型",
+          "version",
+          "版本"
+        ],
+        "reply": "当前运行在离线模式。模型池中的本地模型会在可用时自动加载。"
+      },
+      {
+        "keywords": [
+          "谢谢",
+          "感谢",
+          "thanks",
+          "thx"
+        ],
+        "reply": "不客气！有问题随时问我。"
+      },
+      {
+        "keywords": [
+          "再见",
+          "bye",
+          "拜拜",
+          "88"
+        ],
+        "reply": "再见！"
+      }
+    ]
+  },
+  "style": {
+    "default": "normal",
+    "normal": {
+      "cloud": {
+        "clarify_prefix": "",
+        "answer_prefix": ""
+      }
+    },
+    "warm": {
+      "cloud": {
+        "clarify_prefix": "好的，我先帮你确认一下：",
+        "answer_prefix": "好的，给你一个简要结论："
+      },
+      "profile": {
+        "concise_prefix": "好的，我先做个简短自我介绍：\n",
+        "detailed_prefix": "好的，我给你展开完整能力清单：\n"
+      },
+      "local": {
+        "status_prefix": "好的，先给你一个状态摘要：\n",
+        "event_prefix": "好的，最近事件如下：\n",
+        "memory_recent_prefix": "好的，这是你当前会话的关键记忆：\n",
+        "memory_history_prefix": "好的，这是历史记忆摘要：\n",
+        "memory_search_prefix": "好的，这是记忆检索结果：\n",
+        "memory_summary_prefix": "好的，这是记忆摘要：\n",
+        "task_prefix": "好的，任务执行结果如下：\n",
+        "action_prefix": "好的，动作执行结果如下：\n",
+        "external_clarify_prefix": "好的，我先帮你补齐查询范围：\n",
+        "external_summary_prefix": "好的，外部查询结果如下：\n"
+      }
+    }
+  },
+  "intent_classifier": {
+    "model": "glm-4.5-flash",
+    "prompt_zh": "你是一个意图分类器。分析用户输入，只返回 JSON，不要任何解释。\n\n意图类型：\n- profile: 询问你的身份、能力、介绍自己\n- status: 询问运行状态、当前模型、系统健康\n- weather: 询问天气\n- news: 询问新闻\n- event: 询问事件\n- general_query: 寒暄、闲聊、简单问答\n- complex: 复杂推理、多步任务、代码、长文本\n- external: 需要外部信息检索\n- unknown: 无法判断\n\n返回格式：{\"intent\": \"<意图>\", \"confidence\": <0-1>, \"slots\": {}}\n\n用户输入：",
+    "prompt_en": "You are an intent classifier. Analyze the user input and return ONLY JSON, no explanation.\n\nIntent types:\n- profile: asking about identity, capabilities, self-introduction\n- status: asking about running status, current model, system health\n- weather: asking about weather\n- news: asking about news\n- event: asking about events\n- general_query: greetings, casual chat, simple Q&A\n- complex: complex reasoning, multi-step tasks, code, long text\n- external: needs external information retrieval\n- unknown: cannot determine\n\nReturn format: {\"intent\": \"<intent>\", \"confidence\": <0-1>, \"slots\": {}}\n\nUser input: ",
+    "timeout_ms": 5000,
+    "max_tokens": 128
+  },
+  "fast_path": {
+    "_comment": "Fast 快通道 FC system prompt。包含完成检查清单防止模型提前终止。",
+    "model": "glm-4.5-flash",
+    "timeout_ms": 15000,
+    "max_tool_rounds": 3,
+    "prompt_zh": "你是 thin_agent，一个运行在嵌入式设备上的智能助手。\n\n你可以使用系统工具来帮助用户：\n- 使用 list_dir 查看目录内容\n- 使用 read_file 读取文件\n- 使用 write_file 写入文件\n- 使用 search_code 搜索代码\n- 使用 shell_exec 执行简单命令（echo/cat/ls等），支持 pty=true 和 background=true\n- 使用 process 管理后台进程（action=poll/wait/kill）\n\n规则：\n- 需要访问文件系统时，直接调用相应的工具函数\n- 工具返回结果后，用自然语言汇总给用户\n- 不要编造工具调用结果，只基于实际返回的数据回复\n- 不要自称其他大模型（如 ChatGPT/Claude），你的名字是 thin_agent\n- 除非用户明确要求\"详细\"/\"完整\"/\"全部\"内容，否则只列出用户指定的目录本身，不需要展开子目录\n\n提交回答前请确认：\n✓ 如果用户要求\"详细\"/\"完整\"内容，是否把所有子目录都展开了？\n✓ 回答是否基于实际工具返回的数据，而非猜测或编造？",
+    "prompt_en": "You are thin_agent, an intelligent assistant running on an embedded device.\n\nYou have access to system tools:\n- Use list_dir to list directory contents\n- Use read_file to read files\n- Use write_file to write files\n- Use search_code to search code\n- Use shell_exec to run simple commands (echo/cat/ls etc.), supports pty=true and background=true\n- Use process to manage background processes (action=poll/wait/kill)\n\nRules:\n- When you need filesystem access, call the appropriate tool function directly\n- After getting tool results, summarize in natural language for the user\n- NEVER fabricate tool results — only respond based on actual returned data\n- Do NOT claim to be another model (ChatGPT/Claude/etc.) — your name is thin_agent\n- Unless the user explicitly asks for \"detailed\" / \"complete\" / \"full\" content, only list the directory they specified — do NOT expand subdirectories\n\nBefore finalizing your answer, verify:\n✓ If the user asked for \"detailed\" or \"complete\" content, have you drilled into every subdirectory?\n✓ Is your response based on actual tool data, not assumptions or fabrication?",
+    "file_keywords": [
+      "目录",
+      "文件",
+      "列出",
+      "list",
+      "ls",
+      "dir",
+      "运行",
+      "echo",
+      "执行",
+      "命令",
+      "run",
+      "exec",
+      "cmd",
+      "shell",
+      "cat",
+      "pwd",
+      "whoami",
+      "process",
+      "后台",
+      "进程",
+      "poll",
+      "wait",
+      "kill"
+    ],
+    "complex_exclude": [
+      "修复",
+      "改",
+      "修改",
+      "改代码",
+      "编译",
+      "部署",
+      "fix",
+      "code",
+      "build",
+      "deploy",
+      "改bug"
+    ],
+    "multi_step_markers": [
+      "然后",
+      "接着",
+      "再",
+      "同时",
+      "并且",
+      "先",
+      "最后"
+    ],
+    "tools": [
+      "list_dir",
+      "read_file",
+      "write_file",
+      "search_code",
+      "shell_exec"
+    ]
+  },
+  "translate_input": {
+    "_comment": "输入翻译：非中文/英文的输入先翻译为英文再进关键词匹配",
+    "cloud_model": "glm-4.5-flash",
+    "cloud_timeout_ms": 5000,
+    "cloud_prompt": "Translate to English. Return only the translation, no explanation.",
+    "local_max_tokens": 128,
+    "min_length_for_detect": 10
+  },
+  "intent_map": {
+    "profile": {
+      "has_local_handler": true
+    },
+    "status": {
+      "has_local_handler": true
+    },
+    "weather": {
+      "has_local_handler": true
+    },
+    "news": {
+      "has_local_handler": true
+    },
+    "event": {
+      "has_local_handler": true
+    },
+    "general_query": {
+      "has_local_handler": true,
+      "note": "Flash 短回复，不走 AgentLoop"
+    },
+    "complex": {
+      "has_local_handler": false
+    },
+    "external": {
+      "has_local_handler": false
+    },
+    "unknown": {
+      "has_local_handler": false
+    }
+  },
+  "cloud": {
+    "strategist_system": "You are a smart hardware AI assistant named \"thin_agent\". You help users with device operations, answer questions, and provide information.\n\nPERSONALITY:\n- Speak naturally like a helpful friend, not a robot reading a script\n- Be concise but warm — 2-4 sentences for simple answers, longer only when needed\n- Match the user's language (Chinese for Chinese users, English for English users)\n- Never repeat the same template response across multiple turns — adapt based on conversation history\n\nCONTEXT:\n- You will receive the full conversation history in the \"recent_turns\" field\n- Use it to understand follow-ups, references, and the user's real intent\n- If the user asks \"tell me more\" or \"be more specific\", refer to what was just discussed\n- If the user corrects you, acknowledge and adjust\n\nYOUR TASK:\nReturn a single JSON object with these fields:\n- \"strategy\": \"answer_direct\" (answer now), \"clarify\" (need more info), or \"reject\" (can't do this)\n- \"intent\": the classified intent (e.g. \"profile\", \"general_query\", \"status\", \"media_capture_execute\", \"weather\", \"news\")\n- \"confidence\": 0.0-1.0 how confident you are\n- \"need_clarify\": true/false\n- \"clarify_question\": question to ask if need_clarify is true\n- \"response_draft\": your natural language reply text. THIS IS THE MOST IMPORTANT FIELD - it's what the user sees. Write it naturally, not like a template.\n- \"risk\": \"none\", \"low\", \"medium\", or \"high\"\n- \"reason\": brief explanation of your decision\n\nIMPORTANT:\n- If the user is asking a follow-up or correcting you, the \"intent\" should reflect the current conversation, not re-classify as \"profile\"\n- When the user criticizes or challenges you, acknowledge it in \"response_draft\" and adapt\n- Do NOT output markdown fences, explanations, or anything outside the JSON"
+  },
+  "skills": {
+    "system_ops": {
+      "enabled": true,
+      "name": "系统操作",
+      "desc": "文件读写、代码搜索、目录查看",
+      "actions": [
+        {
+          "name": "read_file",
+          "desc": "读取指定文件的完整内容（文本）。当你需要查看、显示、列出文件内容时使用此工具。参数 path 必须是文件的完整路径（不是目录、不是通配符）。",
+          "params": {
+            "path": "文件的完整路径（如 /etc/hostname、/tmp/test.txt）"
+          },
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        },
+        {
+          "name": "write_file",
+          "desc": "创建或覆盖写入文件。当你需要创建新文件、把内容保存到文件时使用此工具。参数 path 是文件完整路径，content 是要写入的文本内容。",
+          "params": {
+            "path": "文件的完整路径（如 /tmp/new_file.txt）",
+            "content": "要写入文件的文本内容"
+          },
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        },
+        {
+          "name": "search_code",
+          "desc": "在文件内容中搜索文本（grep 语义）。递归扫描目录下所有文件的内容，返回包含指定关键词的行。用于查找变量名、函数名、字符串常量在代码中的位置。注意：搜索的是文件内容，不是文件名。",
+          "params": {
+            "pattern": "要在文件内容中搜索的文本或关键词（如 kThinAgentVersion）",
+            "dir": "搜索的目录路径（默认当前目录）"
+          },
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        },
+        {
+          "name": "search_files",
+          "desc": "按文件名通配符查找文件路径（find 语义）。只返回匹配的文件名列表，不读取文件内容。用于查找文件在哪里、有哪些 .cpp 文件等。注意：此工具只搜索文件名，不搜索文件内容；如果需要查看文件内容请用 read_file。",
+          "params": {
+            "pattern": "文件名通配符模式（如 *.cpp、*.h、Version*、test_*.txt）",
+            "dir": "搜索的目录路径（默认当前目录）",
+            "max_results": "最大结果数（默认50）"
+          },
+          "handlers": {
+            "android": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "ios": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "linux": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "macos": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "windows": {
+              "cmd": "",
+              "type": "cpp"
+            }
+          }
+        },
+        {
+          "name": "list_dir",
+          "desc": "列出目录下的文件和子目录（ls 语义）。当你需要查看某个目录里有什么文件时使用此工具。注意：此工具列出的文件名不能看到文件内容，如需查看内容请用 read_file。",
+          "params": {
+            "dir": "目录路径（如 /tmp、/root/code）"
+          },
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        },
+        {
+          "name": "shell_exec",
+          "desc": "执行白名单内的 shell 命令",
+          "params": {
+            "command": "要执行的命令"
+          },
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        },
+        {
+          "name": "process",
+          "desc": "管理后台进程：poll(轮询状态)/wait(等待完成)/kill(终止)/write(写入stdin)",
+          "desc_en": "manage background processes: poll/wait/kill/write to stdin",
+          "params": [
+            {
+              "name": "action",
+              "type": "string",
+              "desc": "操作：poll/wait/kill/write"
+            },
+            {
+              "name": "session_id",
+              "type": "string",
+              "desc": "后台进程会话ID（由shell_exec background=true返回）"
+            }
+          ],
+          "optional": [
+            "session_id"
+          ],
+          "keywords": [
+            "process",
+            "进程",
+            "后台",
+            "background",
+            "poll",
+            "wait",
+            "kill"
+          ]
+        },
+        {
+          "name": "workflow_list",
+          "desc": "列出所有可用工作流",
+          "params": {},
+          "handlers": {
+            "android": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "ios": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "linux": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "macos": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "windows": {
+              "cmd": "",
+              "type": "cpp"
+            }
+          }
+        },
+        {
+          "name": "workflow_view",
+          "desc": "查看指定工作流详情",
+          "params": {
+            "name": "工作流名称"
+          },
+          "handlers": {
+            "android": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "ios": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "linux": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "macos": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "windows": {
+              "cmd": "",
+              "type": "cpp"
+            }
+          }
+        },
+        {
+          "name": "workflow_create",
+          "desc": "创建新工作流",
+          "params": {
+            "name": "名称",
+            "description": "描述",
+            "domain": "领域",
+            "steps": "[{desc, cmd}]步骤数组"
+          },
+          "handlers": {
+            "android": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "ios": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "linux": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "macos": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "windows": {
+              "cmd": "",
+              "type": "cpp"
+            }
+          }
+        },
+        {
+          "name": "workflow_set",
+          "desc": "切换到指定工作流",
+          "params": {
+            "name": "工作流名称"
+          },
+          "handlers": {
+            "android": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "ios": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "linux": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "macos": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "windows": {
+              "cmd": "",
+              "type": "cpp"
+            }
+          }
+        },
+        {
+          "name": "workflow_delete",
+          "desc": "删除工作流",
+          "params": {
+            "name": "工作流名称"
+          },
+          "handlers": {
+            "android": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "ios": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "linux": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "macos": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "windows": {
+              "cmd": "",
+              "type": "cpp"
+            }
+          }
+        },
+        {
+          "name": "workflow_run",
+          "desc": "执行工作流步骤（编译/测试等），失败时返回结构化错误含 retry 计数，调用方递增 retry 参数即可重试",
+          "params": {
+            "name": "工作流名称（如 cpp-cmake / python-pytest / generic）",
+            "retry": "当前重试次数，从 1 开始，每次失败后 +1 再调用（默认 1）",
+            "project_dir": "项目根目录（可选）"
+          },
+          "handlers": {
+            "android": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "ios": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "linux": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "macos": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "windows": {
+              "cmd": "",
+              "type": "cpp"
+            }
+          }
+        }
+      ]
+    },
+    "git_ops": {
+      "enabled": true,
+      "name": "Git操作",
+      "desc": "查看仓库状态、差异、历史",
+      "actions": [
+        {
+          "name": "git_status",
+          "desc": "查看 Git 仓库工作区状态（staged/unstaged/untracked）",
+          "params": {},
+          "handlers": {
+            "android": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "ios": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "linux": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "macos": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "windows": {
+              "cmd": "",
+              "type": "cpp"
+            }
+          }
+        },
+        {
+          "name": "git_diff",
+          "desc": "查看工作区差异（unified diff）",
+          "params": {
+            "staged": "是否查看暂存区差异（默认 false）",
+            "file": "指定文件路径（可选）"
+          },
+          "handlers": {
+            "android": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "ios": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "linux": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "macos": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "windows": {
+              "cmd": "",
+              "type": "cpp"
+            }
+          }
+        },
+        {
+          "name": "git_log",
+          "desc": "查看最近 N 次提交记录",
+          "params": {
+            "n": "返回最近 N 条（默认 10，最大 100）"
+          },
+          "handlers": {
+            "android": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "ios": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "linux": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "macos": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "windows": {
+              "cmd": "",
+              "type": "cpp"
+            }
+          }
+        },
+        {
+          "name": "git_add",
+          "desc": "暂存文件到 Git 暂存区",
+          "params": {
+            "files": "要暂存的文件路径列表"
+          },
+          "handlers": {
+            "android": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "ios": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "linux": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "macos": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "windows": {
+              "cmd": "",
+              "type": "cpp"
+            }
+          }
+        },
+        {
+          "name": "git_commit",
+          "desc": "提交暂存的改动",
+          "params": {
+            "message": "提交信息"
+          },
+          "handlers": {
+            "android": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "ios": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "linux": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "macos": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "windows": {
+              "cmd": "",
+              "type": "cpp"
+            }
+          }
+        },
+        {
+          "name": "git_show",
+          "desc": "查看某次提交的完整 diff",
+          "params": {
+            "commit": "提交hash或HEAD~N（默认HEAD）"
+          },
+          "handlers": {
+            "android": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "ios": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "linux": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "macos": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "windows": {
+              "cmd": "",
+              "type": "cpp"
+            }
+          }
+        },
+        {
+          "name": "git_checkout",
+          "desc": "切换分支或恢复文件改动",
+          "params": {
+            "target": "分支名/文件路径",
+            "branch": "是否分支操作（默认false=恢复文件）"
+          },
+          "handlers": {
+            "android": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "ios": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "linux": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "macos": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "windows": {
+              "cmd": "",
+              "type": "cpp"
+            }
+          }
+        },
+        {
+          "name": "git_branch",
+          "desc": "列出Git分支",
+          "params": {
+            "remote": "是否显示远程分支（默认false=本地）"
+          },
+          "handlers": {
+            "android": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "ios": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "linux": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "macos": {
+              "cmd": "",
+              "type": "cpp"
+            },
+            "windows": {
+              "cmd": "",
+              "type": "cpp"
+            }
+          }
+        }
+      ]
+    },
+    "media_ops": {
+      "enabled": true,
+      "name": "媒体操作",
+      "desc": "拍照、录像",
+      "actions": [
+        {
+          "name": "capture_photo",
+          "desc": "拍摄照片",
+          "params": {
+            "count": "数量(1-9)"
+          },
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        },
+        {
+          "name": "start_recording",
+          "desc": "开始录像",
+          "params": {
+            "mode": "normal/video/audio",
+            "duration_sec": "时长(秒)"
+          },
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        },
+        {
+          "name": "stop_recording",
+          "desc": "停止录像",
+          "params": {},
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        }
+      ]
+    },
+    "kb": {
+      "enabled": true,
+      "name": "知识库",
+      "desc": "代码知识库管理与搜索 kb_search 搜索索引，kb_index 构建重建索引",
+      "actions": [
+        {
+          "name": "kb_search",
+          "desc": "搜索代码知识库 FTS5 全文检索。指定 kb 参数可切换知识库默认 codebase。",
+          "params": {
+            "query": "搜索关键词",
+            "kb": "知识库名默认 codebase",
+            "limit": "最大结果数默认10"
+          },
+          "optional": [
+            "kb",
+            "limit"
+          ],
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        },
+        {
+          "name": "kb_index",
+          "desc": "构建或增量更新知识库索引。首次使用 KB 前调用此工具。",
+          "params": {
+            "kb": "知识库名默认 codebase",
+            "mode": "full 全量重建或 incremental 增量更新默认"
+          },
+          "optional": [
+            "kb",
+            "mode"
+          ],
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        },
+        {
+          "name": "kb_status",
+          "desc": "查看知识库状态：索引文档数、最后更新时间、覆盖仓库等。",
+          "params": {
+            "kb": "知识库名默认 codebase"
+          },
+          "optional": [
+            "kb"
+          ],
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        },
+        {
+          "name": "kb_add",
+          "desc": "向知识库手动添加文档如 bug 分析、设计决策、故障记录等。",
+          "params": {
+            "kb": "知识库名",
+            "title": "文档标题",
+            "content": "文档全文内容",
+            "tags": "标签空格分隔可选"
+          },
+          "optional": [
+            "kb",
+            "tags"
+          ],
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        }
+      ]
+    },
+    "memory": {
+      "enabled": true,
+      "name": "持久记忆",
+      "desc": "持久记忆管理：memory_save 保存，memory_find 搜索/列出，memory_forget 删除",
+      "actions": [
+        {
+          "name": "memory_save",
+          "desc": "保存一条持久记忆。path 决定作用域：system/* 所有角色可见，user/* 用户画像，role/<name>/* 特定角色，ref/* 冷存储需检索。同 path 自动更新。",
+          "params": {
+            "path": "记忆路径，如 system/prefs、user/style、ref/leaptic_bug",
+            "content": "记忆内容，不超过1000字符"
+          },
+          "optional": [],
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        },
+        {
+          "name": "memory_find",
+          "desc": "搜索或列出持久记忆。提供 query 时全文搜索，不提供时列出全部（可按 prefix 过滤路径前缀）。",
+          "params": {
+            "query": "搜索关键词可选，不提供则列出全部",
+            "prefix": "路径前缀过滤可选，如 system、user、ref",
+            "limit": "最大返回条数默认20"
+          },
+          "optional": [
+            "query",
+            "prefix",
+            "limit"
+          ],
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        },
+        {
+          "name": "memory_forget",
+          "desc": "删除一条持久记忆。id 从 memory_find 返回结果中获取。",
+          "params": {
+            "id": "记忆ID，从 memory_find 结果中获取"
+          },
+          "optional": [],
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        }
+      ]
+    },
+    "session": {
+      "enabled": true,
+      "name": "会话搜索",
+      "desc": "跨会话搜索：session_search 全文搜索历史消息，session_recent 最近消息",
+      "actions": [
+        {
+          "name": "session_search",
+          "desc": "全文搜索历史对话消息。按关键词查找之前讨论过的内容、代码改动、决策等。",
+          "params": {
+            "query": "搜索关键词",
+            "limit": "最大返回条数 默认10"
+          },
+          "optional": [
+            "limit"
+          ],
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        },
+        {
+          "name": "session_recent",
+          "desc": "获取最近的对话消息，跨所有会话按时间倒序排列。",
+          "params": {
+            "limit": "最大返回条数 默认20"
+          },
+          "optional": [
+            "limit"
+          ],
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        }
+      ]
+    },
+    "patrol": {
+      "enabled": true,
+      "name": "系统巡检",
+      "desc": "系统健康巡检：patrol_now 立即运行，patrol_status 查看状态，patrol_config 配置",
+      "actions": [
+        {
+          "name": "patrol_now",
+          "desc": "立即运行所有系统健康巡检探针（磁盘、内存、进程、日志错误），返回结果摘要。",
+          "params": {},
+          "optional": [],
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        },
+        {
+          "name": "patrol_status",
+          "desc": "查看当前巡检状态和最近结果。",
+          "params": {},
+          "optional": [],
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        },
+        {
+          "name": "patrol_config",
+          "desc": "查看巡检配置：探针启用状态、阈值、巡检间隔等。",
+          "params": {},
+          "optional": [],
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        }
+      ]
+    },
+    "code_exec": {
+      "enabled": true,
+      "name": "Python代码执行",
+      "desc": "在子进程中执行 Python 代码：code_exec 传入代码片段，返回 stdout/stderr 和退出码。",
+      "actions": [
+        {
+          "name": "code_exec",
+          "desc": "在子进程中执行代码（纯计算模式，子进程隔离）。传入 code 参数（脚本文本），可选 language（python/bash/sh/node，默认 python）、timeout（默认 30s，最大 120s）。返回 {success, output, exit_code, elapsed_ms}。python 可调用 json/re/math/csv/os/sys/collections/datetime 等标准库。",
+          "params": {
+            "code": "Python 代码文本（必需）",
+            "timeout": "超时秒数（可选，默认30）",
+            "language": "语言类（可选，默认 python）: python/bash/sh/node——白名单=解释器类，新语言只改服务端词表"
+          },
+          "optional": [
+            "timeout",
+            "language"
+          ],
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        }
+      ]
+    },
+    "code_dev": {
+      "enabled": true,
+      "name": "代码开发",
+      "desc": "代码读写、搜索、修改",
+      "actions": [
+        {
+          "name": "code_read_file",
+          "desc": "读取代码文件内容（带行号、支持分页）。当你需要查看代码文件的内容时使用。参数 path 是文件完整路径，可选 offset（起始行号）和 limit（读取行数）。",
+          "params": {
+            "path": "代码文件的完整路径（如 /root/code/thin_agent/src/main.cpp）"
+          },
+          "optional": [
+            "offset",
+            "limit"
+          ],
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        },
+        {
+          "name": "code_patch",
+          "desc": "精准查找替换修改文件内容（old_string → new_string）。当你需要修改已有文件时使用：指定要替换的精确文本和替换后的文本。支持 replace_all 参数替换所有匹配。",
+          "params": {
+            "path": "要修改的文件完整路径",
+            "old_string": "要查找并替换的原文本（必须精确匹配文件中的内容）",
+            "new_string": "替换后的新文本"
+          },
+          "optional": [
+            "replace_all"
+          ],
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        },
+        {
+          "name": "code_search",
+          "desc": "在代码文件内容中搜索关键词（grep 语义，带行号和文件过滤）。用于在代码中查找函数定义、变量引用等。注意：搜索的是代码内容，不是文件名。",
+          "params": {
+            "pattern": "要搜索的代码关键词或模式（如 MyClass、void main）",
+            "path": "搜索的目录路径（默认当前目录）"
+          },
+          "optional": [
+            "path",
+            "file_glob",
+            "limit"
+          ],
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        },
+        {
+          "name": "code_write_file",
+          "desc": "创建/覆写代码文件（自动创建父目录）",
+          "params": {
+            "path": "文件路径",
+            "content": "文件内容"
+          },
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "android": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "ios": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        },
+        {
+          "name": "execute_code",
+          "desc": "执行一段代码（子进程隔离，超时可控）。比 code_exec 多注入 thin_tools 辅助库（python 时可用 read_file/write_file/search/shell/patch）。language 可选 python/bash/sh/node。",
+          "params": {
+            "code": "代码文本（必需）",
+            "language": "语言（可选，默认 python）: python/bash/sh/node",
+            "timeout_sec": "超时秒数（可选，默认30，最大120）"
+          },
+          "optional": [
+            "language",
+            "timeout_sec"
+          ],
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        },
+        {
+          "name": "code_patch_v4a",
+          "desc": "多文件补丁：一次 patch 应用到多个文件（V4A 格式，*** Update File: path 段落）。适合批量重构。",
+          "params": {
+            "patch": "V4A 格式补丁文本（必需）"
+          },
+          "optional": [],
+          "handlers": {
+            "linux": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "macos": {
+              "type": "cpp",
+              "cmd": ""
+            },
+            "windows": {
+              "type": "cpp",
+              "cmd": ""
+            }
+          }
+        }
+      ]
+    }
+  },
+  "shell_exec": {
+    "access": "whitelist"
+  },
+  "whitelist": {
+    "common_rules": {
+      "max_output_bytes": 65536,
+      "max_exec_seconds": 30,
+      "forbid_patterns": [
+        "$(",
+        "sudo",
+        "rm -rf /",
+        "rm -rf ~",
+        "dd ",
+        "chmod",
+        "chown",
+        "mkfs",
+        "mount"
+      ]
+    },
+    "linux": [
+      "cat",
+      "grep",
+      "find",
+      "ls",
+      "head",
+      "tail",
+      "wc",
+      "mkdir",
+      "cp",
+      "mv",
+      "echo",
+      "file",
+      "du",
+      "ps",
+      "uname",
+      "sleep",
+      "date",
+      "time",
+      "pwd",
+      "whoami",
+      "hostname",
+      "uptime",
+      "env",
+      "which",
+      "stat",
+      "touch",
+      "test",
+      "true",
+      "false",
+      "basename",
+      "dirname",
+      "sort",
+      "uniq",
+      "cut",
+      "tr",
+      "diff",
+      "tee",
+      "seq",
+      "yes",
+      "g++",
+      "gcc",
+      "cc",
+      "c++",
+      "make",
+      "cmake",
+      "ctest",
+      "python3",
+      "python",
+      "node",
+      "git",
+      "sed",
+      "awk",
+      "tar",
+      "gzip",
+      "gunzip",
+      "md5sum",
+      "sha256sum",
+      "realpath",
+      "readlink",
+      "rm",
+      "pytest",
+      "pip",
+      "pip3",
+      "npm",
+      "npx",
+      "yarn",
+      "pnpm",
+      "tsc",
+      "jest",
+      "vitest",
+      "java",
+      "javac",
+      "mvn",
+      "gradle",
+      "go",
+      "rustc",
+      "cargo",
+      "dotnet",
+      "swiftc",
+      "zig",
+      "ruby",
+      "php",
+      "perl",
+      "lua"
+    ],
+    "macos": [
+      "cat",
+      "grep",
+      "find",
+      "ls",
+      "head",
+      "tail",
+      "wc",
+      "mkdir",
+      "cp",
+      "mv",
+      "echo",
+      "file",
+      "du",
+      "ps",
+      "uname",
+      "sleep",
+      "date",
+      "time",
+      "pwd",
+      "whoami",
+      "hostname",
+      "uptime",
+      "env",
+      "which",
+      "stat",
+      "touch",
+      "test",
+      "true",
+      "false",
+      "basename",
+      "dirname",
+      "sort",
+      "uniq",
+      "cut",
+      "tr",
+      "diff",
+      "tee",
+      "seq",
+      "yes",
+      "g++",
+      "gcc",
+      "cc",
+      "c++",
+      "make",
+      "cmake",
+      "ctest",
+      "python3",
+      "python",
+      "node",
+      "git",
+      "sed",
+      "awk",
+      "tar",
+      "gzip",
+      "gunzip",
+      "md5sum",
+      "sha256sum",
+      "realpath",
+      "readlink",
+      "rm"
+    ],
+    "windows": [
+      "type",
+      "findstr",
+      "dir",
+      "echo",
+      "mkdir"
+    ],
+    "android": [
+      "cat",
+      "grep",
+      "ls",
+      "head",
+      "tail",
+      "wc",
+      "echo",
+      "mkdir",
+      "cp",
+      "mv",
+      "ps",
+      "uname",
+      "sleep",
+      "date",
+      "pwd",
+      "whoami",
+      "hostname",
+      "which",
+      "stat",
+      "touch",
+      "sort",
+      "uniq",
+      "cut",
+      "tr"
+    ],
+    "ios": [
+      "cat",
+      "grep",
+      "ls",
+      "head",
+      "tail",
+      "wc",
+      "echo",
+      "file",
+      "du",
+      "ps",
+      "uname",
+      "sleep",
+      "date",
+      "pwd",
+      "whoami",
+      "hostname",
+      "which",
+      "stat",
+      "touch",
+      "sort",
+      "uniq",
+      "cut",
+      "tr"
+    ]
+  },
+  "mcp_servers": [],
+  "progress_messages": {
+    "_doc": "进度/动作消息双语对照表。输入是简体中文 → zh，其他语言 → en。占位符 {key} 运行时替换。",
+    "zh": {
+      "local_analysis": "🔍 本地分析中 ...",
+      "understanding_intent": "🎯 正在理解意图 ...",
+      "fast": "⚡ Fast 快速处理 ...",
+      "deep_reasoning": "⚛️ 深度推理中 ...",
+      "summarizing": "📝 汇总中 ...",
+      "listing_dir": "📂 正在列出目录 {path} ...",
+      "reading_file": "📄 正在读取 {path} ...",
+      "writing_file": "✏️ 正在写入 {path} ...",
+      "searching_code": "🔍 正在搜索代码 {pattern} ...",
+      "summarizing_result": "📝 正在汇总结果 ..."
+    },
+    "en": {
+      "local_analysis": "🔍 Analyzing locally ...",
+      "understanding_intent": "🎯 Understanding intent ...",
+      "fast": "⚡ Fast processing ...",
+      "deep_reasoning": "⚛️ Deep reasoning ...",
+      "summarizing": "📝 Summarizing ...",
+      "listing_dir": "📂 Listing directory {path} ...",
+      "reading_file": "📄 Reading {path} ...",
+      "writing_file": "✏️ Writing {path} ...",
+      "searching_code": "🔍 Searching code {pattern} ...",
+      "summarizing_result": "📝 Summarizing results ..."
+    }
+  },
+  "plugins": {
+    "_doc": "插件按目录组织。always[] 始终加载，modes{} 按模式加载。",
+    "always": [
+      "common"
+    ],
+    "modes": {
+      "dev": [
+        "dev"
+      ]
+    }
+  },
+  "context": {
+    "_doc": "跨轮上下文管理。token 预算控制历史最大容量，嵌入式设备收缩。",
+    "history_budget_tokens": 12000,
+    "history_budget_tokens_embedded": 4000,
+    "full_context_turns": 2,
+    "truncated_max_chars": 200,
+    "tool_cache_size": 5,
+    "project_scan_enabled": true,
+    "project_scan_max_depth": 3,
+    "project_scan_ignore": [
+      "node_modules",
+      ".git",
+      "build",
+      "__pycache__",
+      ".pytest_cache"
+    ]
+  },
+  "patrol": {
+    "_doc": "系统健康巡检：Cron 定时触发，探针结果 → LLM 分析 → Feishu 推送。quiet_mode=true 仅告警时推送。",
+    "enabled": true,
+    "cron_interval_min": 30,
+    "quiet_mode": true,
+    "disk": {
+      "enabled": true,
+      "path": "/",
+      "warn_pct": 85
+    },
+    "memory": {
+      "enabled": true,
+      "warn_pct": 90
+    },
+    "process": {
+      "enabled": true,
+      "names": [
+        "thin_agent",
+        "thin_agent_gw"
+      ]
+    },
+    "log_errors": {
+      "enabled": true,
+      "log_path": "~/.thin_agent/logs/agent_svc.log",
+      "minutes": 60,
+      "warn_count": 3
+    }
+  },
+  "roles": {
+    "developer": {
+      "tools": [
+        "web_search"
+      ]
+    },
+    "worker": {
+      "tools": [
+        "web_search"
+      ]
+    }
+  },
+  "risk_grading": {
+    "shell_exec": {
+      "deny_substrings": [
+        "$(",
+        "${",
+        "sudo",
+        "su ",
+        "rm -rf /",
+        "rm -rf ~",
+        "dd ",
+        "chmod",
+        "chown",
+        "mkfs",
+        "mount",
+        "umount",
+        "curl",
+        "wget",
+        "nc ",
+        "ncat",
+        "ssh",
+        "scp",
+        "sftp",
+        "ftp",
+        "telnet",
+        "git push",
+        "git reset",
+        "git clean",
+        "kill",
+        "killall",
+        "pkill",
+        "shutdown",
+        "reboot",
+        "poweroff",
+        "halt",
+        "systemctl",
+        "service",
+        "crontab",
+        "iptables",
+        "nft",
+        "setenforce",
+        "nsenter",
+        "chroot"
+      ],
+      "allow_first_words": [
+        "g++",
+        "gcc",
+        "cc",
+        "c++",
+        "make",
+        "cmake",
+        "ctest",
+        "ninja",
+        "clang",
+        "clang++",
+        "gdb",
+        "python3",
+        "python",
+        "pytest",
+        "pip",
+        "pip3",
+        "uv",
+        "poetry",
+        "node",
+        "npm",
+        "npx",
+        "yarn",
+        "pnpm",
+        "bun",
+        "deno",
+        "tsc",
+        "jest",
+        "vitest",
+        "mocha",
+        "java",
+        "javac",
+        "mvn",
+        "gradle",
+        "kotlin",
+        "kotlinc",
+        "go",
+        "rustc",
+        "cargo",
+        "dotnet",
+        "swiftc",
+        "zig",
+        "ruby",
+        "gem",
+        "php",
+        "perl",
+        "lua",
+        "Rscript",
+        "bash",
+        "sh",
+        "ls",
+        "cat",
+        "grep",
+        "find",
+        "head",
+        "tail",
+        "wc",
+        "mkdir",
+        "cp",
+        "mv",
+        "echo",
+        "file",
+        "du",
+        "ps",
+        "uname",
+        "sleep",
+        "date",
+        "time",
+        "pwd",
+        "whoami",
+        "hostname",
+        "uptime",
+        "env",
+        "which",
+        "stat",
+        "touch",
+        "test",
+        "true",
+        "false",
+        "basename",
+        "dirname",
+        "sort",
+        "uniq",
+        "cut",
+        "tr",
+        "diff",
+        "tee",
+        "seq",
+        "md5sum",
+        "sha256sum",
+        "realpath",
+        "readlink",
+        "sed",
+        "awk",
+        "tar",
+        "gzip",
+        "gunzip",
+        "jq",
+        "timeout",
+        "xargs",
+        "watch",
+        "git"
+      ]
+    }
+  },
+  "slash_commands": {
+    "enabled": true,
+    "aliases": {
+      "/new": [
+        "/start",
+        "/fresh"
+      ],
+      "/clear": [
+        "/cls",
+        "/clean"
+      ],
+      "/reset": [],
+      "/help": [],
+      "/status": [],
+      "/stop": [
+        "/halt"
+      ],
+      "/model": [
+        "/models"
+      ],
+      "/tools": [
+        "/tool"
+      ],
+      "/compact": [],
+      "/retry": [],
+      "/sessions": []
+    },
+    "descriptions": {
+      "/new": "开启新会话（清空上下文）",
+      "/reset": "重置会话并复位运行态（熔断/限流）",
+      "/clear": "清空对话历史（保留项目上下文）",
+      "/help": "显示斜杠命令帮助",
+      "/status": "显示会话状态",
+      "/stop": "中断当前会话进行中任务（协作式）",
+      "/model": "模型快照（当前+fast+冗余池）",
+      "/tools": "已注册工具清单",
+      "/compact": "压缩上下文（LLM 摘要，保留近 4 条原文）",
+      "/retry": "重试上一条用户消息",
+      "/sessions": "活跃会话列表（切换=换 chat_id 发消息）"
+    }
+  }
+}

@@ -1,0 +1,14 @@
+# CMake build artifacts
+build*/
+CMakeCache.txt
+CMakeFiles/
+*.cmake
+cmake_install.cmake
+Makefile
+!CMakeLists.txt
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo

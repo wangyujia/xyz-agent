@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leaptic 产品知识库</title>
+    <style>
+        :root {
+            --bg: #1a1a2e;
+            --surface: #16213e;
+            --primary: #0f3460;
+            --accent: #e94560;
+            --text: #eee;
+            --muted: #888;
+            --border: #333;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 2rem;
+        }
+        .container { max-width: 900px; margin: 0 auto; }
+        
+        h1 {
+            text-align: center;
+            font-size: 1.8rem;
+            margin-bottom: 0.5rem;
+        }
+        .subtitle {
+            text-align: center;
+            color: var(--muted);
+            margin-bottom: 2rem;
+        }
+
+        /* Search box */
+        .search-box {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .search-box input {
+            flex: 1;
+            padding: 0.8rem 1rem;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            font-size: 1rem;
+        }
+        .search-box input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        .search-box button {
+            padding: 0.8rem 1.5rem;
+            border-radius: 8px;
+            border: none;
+            background: var(--accent);
+            color: white;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .search-box button:hover { opacity: 0.85; }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 0;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 1rem;
+        }
+        .tab {
+            padding: 0.6rem 1.2rem;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            color: var(--muted);
+            transition: all 0.2s;
+        }
+        .tab.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+
+        /* Results */
+        .results { min-height: 200px; }
+        .result-item {
+            padding: 1rem;
+            margin-bottom: 0.8rem;
+            background: var(--surface);
+            border-radius: 8px;
+            border-left: 3px solid var(--accent);
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+        .result-item:hover { transform: translateX(4px); }
+        .result-title {
+            font-weight: 600;
+            margin-bottom: 0.3rem;
+        }
+        .result-path {
+            font-size: 0.8rem;
+            color: var(--muted);
+            font-family: monospace;
+        }
+        .result-snippet {
+            font-size: 0.9rem;
+            color: #ccc;
+            margin-top: 0.4rem;
+            line-height: 1.5;
+        }
+        .result-meta {
+            font-size: 0.75rem;
+            color: var(--muted);
+            margin-top: 0.4rem;
+        }
+
+        /* Document view */
+        .doc-view {
+            display: none;
+            background: var(--surface);
+            border-radius: 8px;
+            padding: 1.5rem;
+        }
+        .doc-view.active { display: block; }
+        .doc-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding-bottom: 0.8rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .doc-back {
+            cursor: pointer;
+            color: var(--accent);
+            font-size: 0.9rem;
+        }
+        .doc-content {
+            line-height: 1.8;
+            white-space: pre-wrap;
+            font-size: 0.95rem;
+        }
+        .doc-content h1, .doc-content h2, .doc-content h3 {
+            margin: 1rem 0 0.5rem;
+            color: var(--accent);
+        }
+
+        /* Ask section */
+        .ask-section { margin-top: 2rem; }
+        .ask-section textarea {
+            width: 100%;
+            padding: 0.8rem;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            font-size: 0.95rem;
+            min-height: 80px;
+            resize: vertical;
+        }
+        .ask-answer {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: var(--surface);
+            border-radius: 8px;
+            line-height: 1.7;
+            white-space: pre-wrap;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: var(--muted);
+        }
+        .empty {
+            text-align: center;
+            padding: 3rem;
+            color: var(--muted);
+        }
+        .stats {
+            display: flex;
+            gap: 2rem;
+            justify-content: center;
+            margin-bottom: 2rem;
+        }
+        .stat {
+            text-align: center;
+        }
+        .stat-num {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--accent);
+        }
+        .stat-label {
+            font-size: 0.8rem;
+            color: var(--muted);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📚 Leaptic 产品知识库</h1>
+        <p class="subtitle">搜索产品知识 · 浏览文档 · 智能问答</p>
+
+        <div class="stats" id="stats"></div>
+
+        <div class="search-box">
+            <input type="text" id="searchInput" placeholder="搜索关键词（支持中文）..." 
+                   onkeypress="if(event.key==='Enter') doSearch()">
+            <button onclick="doSearch()">搜索</button>
+        </div>
+
+        <div class="tabs">
+            <div class="tab active" data-tab="search" onclick="switchTab('search')">搜索结果</div>
+            <div class="tab" data-tab="browse" onclick="switchTab('browse')">浏览文档</div>
+            <div class="tab" data-tab="ask" onclick="switchTab('ask')">智能问答</div>
+        </div>
+
+        <div class="results" id="searchResults">
+            <div class="empty">输入关键词搜索知识库</div>
+        </div>
+
+        <div class="results" id="browseResults" style="display:none"></div>
+
+        <div class="ask-section" id="askSection" style="display:none">
+            <textarea id="askInput" placeholder="输入你的问题，知识管家会搜索相关文档并整合回答..."></textarea>
+            <button onclick="doAsk()" style="margin-top:0.5rem;padding:0.6rem 1.2rem;border-radius:8px;border:none;background:var(--accent);color:white;cursor:pointer;">提问</button>
+            <div class="ask-answer" id="askAnswer" style="display:none"></div>
+        </div>
+
+        <div class="doc-view" id="docView">
+            <div class="doc-header">
+                <span class="doc-back" onclick="closeDoc()">← 返回列表</span>
+                <span class="result-path" id="docPath"></span>
+            </div>
+            <div class="doc-content" id="docContent"></div>
+        </div>
+    </div>
+
+    <script>
+        const API = window.location.origin;
+
+        // Load stats on page load
+        async function loadStats() {
+            try {
+                const res = await fetch(`${API}/api/list`);
+                const data = await res.json();
+                document.getElementById('stats').innerHTML = `
+                    <div class="stat"><div class="stat-num">${data.count}</div><div class="stat-label">文档总数</div></div>
+                `;
+            } catch(e) {}
+        }
+
+        async function doSearch() {
+            const q = document.getElementById('searchInput').value.trim();
+            if (!q) return;
+
+            const container = document.getElementById('searchResults');
+            container.innerHTML = '<div class="loading">搜索中...</div>';
+
+            try {
+                const res = await fetch(`${API}/api/search?q=${encodeURIComponent(q)}&limit=20`);
+                const data = await res.json();
+
+                if (data.count === 0) {
+                    container.innerHTML = '<div class="empty">未找到匹配结果</div>';
+                    return;
+                }
+
+                container.innerHTML = data.results.map(r => `
+                    <div class="result-item" onclick="openDoc('${r.path}')">
+                        <div class="result-title">${r.path.split('/').pop().replace('.md','')}</div>
+                        <div class="result-path">${r.path}</div>
+                        ${r.snippet ? `<div class="result-snippet">${escapeHtml(r.snippet)}</div>` : ''}
+                        <div class="result-meta">相关度: ${r.score.toFixed(4)}</div>
+                    </div>
+                `).join('');
+            } catch(e) {
+                container.innerHTML = `<div class="empty">请求失败: ${e.message}</div>`;
+            }
+        }
+
+        async function loadDocs() {
+            const container = document.getElementById('browseResults');
+            container.innerHTML = '<div class="loading">加载中...</div>';
+
+            try {
+                const res = await fetch(`${API}/api/list`);
+                const data = await res.json();
+
+                container.innerHTML = data.documents.map(d => `
+                    <div class="result-item" onclick="openDoc('${d.path}')">
+                        <div class="result-title">${d.title || d.path}</div>
+                        <div class="result-path">${d.path}</div>
+                        <div class="result-meta">
+                            ${d.module ? `模块: ${d.module}` : ''}
+                            ${d.tags && d.tags.length ? ` | 标签: ${d.tags.join(', ')}` : ''}
+                            ${d.updated ? ` | 更新: ${d.updated}` : ''}
+                        </div>
+                    </div>
+                `).join('');
+            } catch(e) {
+                container.innerHTML = `<div class="empty">加载失败: ${e.message}</div>`;
+            }
+        }
+
+        async function openDoc(path) {
+            try {
+                const res = await fetch(`${API}/api/doc/${path}`);
+                const data = await res.json();
+
+                document.getElementById('docPath').textContent = path;
+                document.getElementById('docContent').textContent = data.body || data.content;
+                document.getElementById('docView').classList.add('active');
+                document.getElementById('searchResults').style.display = 'none';
+                document.getElementById('browseResults').style.display = 'none';
+            } catch(e) {
+                alert('加载文档失败: ' + e.message);
+            }
+        }
+
+        function closeDoc() {
+            document.getElementById('docView').classList.remove('active');
+            const activeTab = document.querySelector('.tab.active').dataset.tab;
+            if (activeTab === 'browse') {
+                document.getElementById('browseResults').style.display = '';
+            } else {
+                document.getElementById('searchResults').style.display = '';
+            }
+        }
+
+        async function doAsk() {
+            const q = document.getElementById('askInput').value.trim();
+            if (!q) return;
+
+            const answer = document.getElementById('askAnswer');
+            answer.style.display = 'block';
+            answer.textContent = '思考中...';
+
+            try {
+                const res = await fetch(`${API}/api/ask`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({question: q, top_k: 5})
+                });
+                const data = await res.json();
+                let text = data.answer || '无法回答';
+                if (data.sources && data.sources.length) {
+                    text += '\n\n---\n来源: ' + data.sources.map(s => s.path).join(', ');
+                }
+                answer.textContent = text;
+            } catch(e) {
+                answer.textContent = '请求失败: ' + e.message;
+            }
+        }
+
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelector(`.tab[data-tab="${tab}"]`).classList.add('active');
+
+            document.getElementById('searchResults').style.display = tab === 'search' ? '' : 'none';
+            document.getElementById('browseResults').style.display = tab === 'browse' ? '' : 'none';
+            document.getElementById('askSection').style.display = tab === 'ask' ? '' : 'none';
+            document.getElementById('docView').classList.remove('active');
+
+            if (tab === 'browse') loadDocs();
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+
+        loadStats();
+    </script>
+</body>
+</html>

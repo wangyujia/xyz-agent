@@ -1,0 +1,32 @@
+[Unit]
+Description=thin_agent daemon — AI Agent backend
+Documentation=https://github.com/nousresearch/thin_agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/thin_agentd --config /etc/thin_agent/demo.model.yaml --profile default
+Restart=on-failure
+RestartSec=5
+User=thinagent
+Group=thinagent
+WorkingDirectory=/var/lib/thin_agent
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=thin_agentd
+
+# 安全加固
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/thin_agent
+PrivateTmp=yes
+
+# 资源限制
+MemoryHigh=2G
+MemoryMax=4G
+CPUQuota=200%
+
+[Install]
+WantedBy=multi-user.target
