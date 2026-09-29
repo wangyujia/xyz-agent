@@ -37,6 +37,11 @@ xyz-agent/
 
 > 说明：`backends/thin_agent/tests/` 在源仓的 `.gitignore` 里被忽略（源仓靠 `git add -f` 纳入）；本仓同样已强制纳入。
 
+### 不入库的第三方依赖 / 外部资源
+
+**克隆本仓后需按文档补齐依赖**（llama.cpp 源码树、ONNX Runtime 预编译库、意图模型、GGUF 权重、打包产物、KB 索引、凭据）——
+详见 **[THIRD_PARTY.md](THIRD_PARTY.md)**：逐项给出路径、体积、何时需要、**精确恢复步骤（上游 URL / 固定 commit / 本仓脚本）**与 **sha256 校验值**。
+
 ## 构建（推荐：源码在上面这份目录，构建产物放 Linux 侧 ext4）
 
 > `/mnt/e` 是 Windows 盘（9p/DrvFs）：**没有 POSIX 权限位/执行位、大小写不敏感、I/O 慢**，不适合直接在里面构建；`*.sh` 请用 `bash xxx.sh` 调用。

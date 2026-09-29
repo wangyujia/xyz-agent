@@ -45,6 +45,9 @@ backends/thin_agent/third_party/onnxruntime/lib/
 backends/thin_agent/third_party/onnxruntime-aarch64/
 backends/thin_agent/dist/
 
+# llama.cpp 源码树（220M，可选依赖：仅 -DTHIN_AGENT_WITH_LLAMA_CPP=ON 需要；恢复见 THIRD_PARTY.md §2.1）
+backends/thin_agent/third_party/llama.cpp/
+
 # ---- 知识库派生数据（正文在 markdown，DB 为索引）----
 backends/knowledge_base/kb.db
 backends/knowledge_base/.search.db
