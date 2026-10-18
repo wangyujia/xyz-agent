@@ -22,3 +22,11 @@
 - Never modify third_party/ files
 - All new features must have corresponding ctest
 - Version.h and CHANGELOG.md must be updated together
+
+## Cursor Cloud
+- 编译器必须是 GCC 13。镜像里 `/usr/bin/c++` 可能指向 clang++，链接会报找不到 `libstdc++`。`update-alternatives` 把 `cc`/`c++` 指到 `gcc`/`g++`。
+- Go 测试模块声明 `go 1.26`，apt 的 Go 1.22 不够。用 `/usr/local/go`（1.27.2），`/usr/local/bin/go` 已优先于 `/usr/bin/go`。`test/source_go/run.sh` 默认 `GOTOOLCHAIN=local`。
+- ONNX Runtime 1.18.1 的 `libonnxruntime.so` 不入库。放到 `third_party/onnxruntime/lib/`，并且必须是真实文件，不能是会在某些挂载上变成 0 字节的符号链接。校验和见仓库根目录 `THIRD_PARTY.md`。
+- 知识库 HTTP 服务用 `/opt/xyz-dev/venv`，端口 8900，检索表是 `kb_fts`（`server.core.searcher.reindex_all`）。`scripts/reindex.py` 写的是另一张 `docs` 表。
+- 测试硬编码了这些路径：`/root/code/thin_agent`、`/root/.thin_agent/config`、`/root/.hermes/node/bin/node`、`/usr/share/nodejs/ws`。云端环境用符号链接和 `node-ws` 满足它们。云端 e2e 需要的 `deepseek.env` / API key 不在仓库里；没有 key 时 `e2e_stream_cmdid` 会 SKIP。
+- 不要和 `xyz-base` 的 `build/linux/host_start.sh` 同时占 `/tmp/xyz_mesh`。平台冒烟是 `build/linux/smoke_platform_gw.sh`。Go 跨语言用例要先有 `test/source/interop/xyz_ipc_peer`（`test/source/interop/build.sh`）。
