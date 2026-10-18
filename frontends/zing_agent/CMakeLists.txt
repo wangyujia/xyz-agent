@@ -10,7 +10,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # ── thin_agent discovery 源文件（从后端项目复用）─────────────────
-set(THIN_AGENT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../thin_agent"
+set(THIN_AGENT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../backends/thin_agent"
     CACHE PATH "Path to thin_agent repository root")
 
 if(NOT WIN32)
