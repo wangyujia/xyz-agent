@@ -2142,7 +2142,7 @@ CloudChatResult run_function_calling_loop(
     for (auto it = initial_messages.rbegin();
          it != initial_messages.rend(); ++it) {
       if (it->role == "user" && !it->content.empty()) {
-        goal = it->content.substr(0, 200);
+        goal = utf8_truncate(it->content, 200);
         break;
       }
     }

@@ -12,6 +12,7 @@
 #include <thread>
 
 #include "thin_agent/core/ChatPolicy.h"
+#include "thin_agent/core/Utf8Util.h"
 #include "thin_agent/llm/IHttpClient.h"
 #include "thin_agent/llm/CurlHttpClient.h"
 #include "thin_agent/llm/ProviderFactory.h"
@@ -621,17 +622,17 @@ std::string CloudLlmClient::build_request_body(
   body["messages"] = nlohmann::json::array();
   for (const auto& m : messages) {
     nlohmann::json msg;
-    msg["role"] = m.role;
+    msg["role"] = utf8_sanitize(m.role);
     if (m.role == "tool") {
-      msg["tool_call_id"] = m.tool_call_id;
-      if (!m.name.empty()) msg["name"] = m.name;
-      msg["content"] = m.content;
+      msg["tool_call_id"] = utf8_sanitize(m.tool_call_id);
+      if (!m.name.empty()) msg["name"] = utf8_sanitize(m.name);
+      msg["content"] = utf8_sanitize(m.content);
     } else {
       // v0.39.0: vision 多模态支持 — content 变数组
       if (vision && !m.image_base64.empty() && (m.role == "user" || m.role == "system")) {
         nlohmann::json text_part;
         text_part["type"] = "text";
-        text_part["text"] = m.content;
+        text_part["text"] = utf8_sanitize(m.content);
 
         nlohmann::json image_part;
         image_part["type"] = "image_url";
@@ -639,7 +640,7 @@ std::string CloudLlmClient::build_request_body(
 
         msg["content"] = nlohmann::json::array({text_part, image_part});
       } else {
-        msg["content"] = m.content;
+        msg["content"] = utf8_sanitize(m.content);
       }
       if (m.role == "assistant" && m.tool_calls.is_array() && !m.tool_calls.empty()) {
         msg["tool_calls"] = m.tool_calls;
@@ -653,7 +654,8 @@ std::string CloudLlmClient::build_request_body(
     body["tool_choice"] = "auto";
   }
   if (stream) body["stream"] = true;
-  return body.dump();
+  // replace：工具描述/记忆注入若仍有非法序列，不让整次云调用因 dump 崩掉
+  return body.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
 }
 
 std::string CloudLlmClient::build_anthropic_request_body(

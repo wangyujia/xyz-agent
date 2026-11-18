@@ -25,4 +25,62 @@ inline std::string utf8_truncate(const std::string& s, size_t max_bytes) {
   return s.substr(0, n);
 }
 
+/// 丢掉非法 UTF-8 字节，避免 nlohmann::json 赋值/dump 抛 type_error.316。
+/// 记忆注入、工具截断、本地模型 SSE 都可能带进半截多字节序列。
+inline std::string utf8_sanitize(const std::string& in) {
+  std::string out;
+  out.reserve(in.size());
+  size_t i = 0;
+  while (i < in.size()) {
+    const unsigned char c = static_cast<unsigned char>(in[i]);
+    if (c == 0x00) {
+      ++i;
+      continue;
+    }
+    if (c < 0x80) {
+      if (c >= 0x20 || c == 0x09 || c == 0x0A || c == 0x0D) {
+        out.push_back(static_cast<char>(c));
+      }
+      ++i;
+      continue;
+    }
+    if (c >= 0xC2 && c <= 0xDF) {
+      if (i + 1 < in.size() &&
+          (static_cast<unsigned char>(in[i + 1]) & 0xC0) == 0x80) {
+        out.push_back(in[i]);
+        out.push_back(in[i + 1]);
+        i += 2;
+        continue;
+      }
+      ++i;
+      continue;
+    }
+    if (c >= 0xE0 && c <= 0xEF) {
+      if (i + 2 < in.size() &&
+          (static_cast<unsigned char>(in[i + 1]) & 0xC0) == 0x80 &&
+          (static_cast<unsigned char>(in[i + 2]) & 0xC0) == 0x80) {
+        out.append(in, i, 3);
+        i += 3;
+        continue;
+      }
+      ++i;
+      continue;
+    }
+    if (c >= 0xF0 && c <= 0xF4) {
+      if (i + 3 < in.size() &&
+          (static_cast<unsigned char>(in[i + 1]) & 0xC0) == 0x80 &&
+          (static_cast<unsigned char>(in[i + 2]) & 0xC0) == 0x80 &&
+          (static_cast<unsigned char>(in[i + 3]) & 0xC0) == 0x80) {
+        out.append(in, i, 4);
+        i += 4;
+        continue;
+      }
+      ++i;
+      continue;
+    }
+    ++i;
+  }
+  return out;
+}
+
 }  // namespace thin_agent
