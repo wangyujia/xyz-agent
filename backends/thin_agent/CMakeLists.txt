@@ -1655,34 +1655,87 @@ add_custom_command(TARGET skill_code_exec POST_BUILD
 
 # --- 可选：llama.cpp 本地模型推理 ---
 if(THIN_AGENT_WITH_LLAMA_CPP)
-  # 用户需自行编译 llama.cpp 并设置 LLAMA_CPP_DIR
+  # Linux：LLAMA_CPP_DIR 指向源码树（含 build/ 静态库）。
+  # Windows：优先用预编译 DLL + 导入库：
+  #   LLAMA_CPP_DIR  = 含 bin/*.dll 与 lib/*.lib 的预编译根（默认 C:/deps-thin-agent/llama.cpp）
+  #   LLAMA_CPP_SRC  = 匹配版本的源码头文件（默认 C:/deps-thin-agent/llama.cpp-src）
   if(DEFINED ENV{LLAMA_CPP_DIR})
     set(LLAMA_CPP_DIR "$ENV{LLAMA_CPP_DIR}")
   endif()
+  if(DEFINED ENV{LLAMA_CPP_SRC})
+    set(LLAMA_CPP_SRC "$ENV{LLAMA_CPP_SRC}")
+  endif()
   if(NOT LLAMA_CPP_DIR)
-    set(LLAMA_CPP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp")
+    if(WIN32 AND EXISTS "C:/deps-thin-agent/llama.cpp/lib/llama.lib")
+      set(LLAMA_CPP_DIR "C:/deps-thin-agent/llama.cpp")
+    else()
+      set(LLAMA_CPP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp")
+    endif()
+  endif()
+  if(NOT LLAMA_CPP_SRC)
+    if(EXISTS "C:/deps-thin-agent/llama.cpp-src/include/llama.h")
+      set(LLAMA_CPP_SRC "C:/deps-thin-agent/llama.cpp-src")
+    else()
+      set(LLAMA_CPP_SRC "${LLAMA_CPP_DIR}")
+    endif()
   endif()
 
-  add_library(llama_vendor STATIC IMPORTED)
-  set_target_properties(llama_vendor PROPERTIES
-    IMPORTED_LOCATION "${LLAMA_CPP_DIR}/build/src/libllama.a")
+  if(WIN32 AND EXISTS "${LLAMA_CPP_DIR}/lib/llama.lib")
+    add_library(llama_vendor SHARED IMPORTED)
+    set_target_properties(llama_vendor PROPERTIES
+      IMPORTED_LOCATION "${LLAMA_CPP_DIR}/bin/llama.dll"
+      IMPORTED_IMPLIB "${LLAMA_CPP_DIR}/lib/llama.lib")
+    add_library(ggml_vendor SHARED IMPORTED)
+    set_target_properties(ggml_vendor PROPERTIES
+      IMPORTED_LOCATION "${LLAMA_CPP_DIR}/bin/ggml.dll"
+      IMPORTED_IMPLIB "${LLAMA_CPP_DIR}/lib/ggml.lib")
 
-  add_library(ggml_vendor STATIC IMPORTED)
-  set_target_properties(ggml_vendor PROPERTIES
-    IMPORTED_LOCATION "${LLAMA_CPP_DIR}/build/ggml/src/libggml.a")
-  add_library(ggml_base_vendor STATIC IMPORTED)
-  set_target_properties(ggml_base_vendor PROPERTIES
-    IMPORTED_LOCATION "${LLAMA_CPP_DIR}/build/ggml/src/libggml-base.a")
-  add_library(ggml_cpu_vendor STATIC IMPORTED)
-  set_target_properties(ggml_cpu_vendor PROPERTIES
-    IMPORTED_LOCATION "${LLAMA_CPP_DIR}/build/ggml/src/libggml-cpu.a")
+    target_include_directories(thin_agent_core PUBLIC
+      "${LLAMA_CPP_SRC}/include"
+      "${LLAMA_CPP_SRC}/ggml/include")
+    target_link_libraries(thin_agent_core PUBLIC llama_vendor ggml_vendor)
+    target_compile_definitions(thin_agent_core PUBLIC
+      THIN_AGENT_WITH_LLAMA_CPP LLAMA_SHARED GGML_SHARED)
 
-  target_include_directories(thin_agent_core PUBLIC
-    "${LLAMA_CPP_DIR}/include"
-    "${LLAMA_CPP_DIR}/ggml/include"
-    "${LLAMA_CPP_DIR}/build/ggml/include")
-  target_link_libraries(thin_agent_core PUBLIC
-    llama_vendor ggml_vendor ggml_base_vendor ggml_cpu_vendor)
-  target_compile_definitions(thin_agent_core PUBLIC THIN_AGENT_WITH_LLAMA_CPP)
-  message(STATUS "llama.cpp: ${LLAMA_CPP_DIR}")
+    # 运行时后端 DLL（Vulkan/CPU）需与 exe 同目录或 ggml 能搜到
+    if(TARGET thin_agent)
+      file(GLOB _llama_runtime_dlls
+        "${LLAMA_CPP_DIR}/bin/llama.dll"
+        "${LLAMA_CPP_DIR}/bin/ggml.dll"
+        "${LLAMA_CPP_DIR}/bin/ggml-base.dll"
+        "${LLAMA_CPP_DIR}/bin/ggml-vulkan.dll"
+        "${LLAMA_CPP_DIR}/bin/ggml-cpu-*.dll"
+        "${LLAMA_CPP_DIR}/bin/libomp.dll")
+      foreach(_dll IN LISTS _llama_runtime_dlls)
+        add_custom_command(TARGET thin_agent POST_BUILD
+          COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${_dll}" "$<TARGET_FILE_DIR:thin_agent>"
+          COMMENT "Copy llama/ggml runtime DLL next to thin_agent.exe")
+      endforeach()
+    endif()
+    message(STATUS "llama.cpp (Windows DLL): ${LLAMA_CPP_DIR} headers=${LLAMA_CPP_SRC}")
+  else()
+    add_library(llama_vendor STATIC IMPORTED)
+    set_target_properties(llama_vendor PROPERTIES
+      IMPORTED_LOCATION "${LLAMA_CPP_DIR}/build/src/libllama.a")
+
+    add_library(ggml_vendor STATIC IMPORTED)
+    set_target_properties(ggml_vendor PROPERTIES
+      IMPORTED_LOCATION "${LLAMA_CPP_DIR}/build/ggml/src/libggml.a")
+    add_library(ggml_base_vendor STATIC IMPORTED)
+    set_target_properties(ggml_base_vendor PROPERTIES
+      IMPORTED_LOCATION "${LLAMA_CPP_DIR}/build/ggml/src/libggml-base.a")
+    add_library(ggml_cpu_vendor STATIC IMPORTED)
+    set_target_properties(ggml_cpu_vendor PROPERTIES
+      IMPORTED_LOCATION "${LLAMA_CPP_DIR}/build/ggml/src/libggml-cpu.a")
+
+    target_include_directories(thin_agent_core PUBLIC
+      "${LLAMA_CPP_SRC}/include"
+      "${LLAMA_CPP_SRC}/ggml/include"
+      "${LLAMA_CPP_DIR}/build/ggml/include")
+    target_link_libraries(thin_agent_core PUBLIC
+      llama_vendor ggml_vendor ggml_base_vendor ggml_cpu_vendor)
+    target_compile_definitions(thin_agent_core PUBLIC THIN_AGENT_WITH_LLAMA_CPP)
+    message(STATUS "llama.cpp (static): ${LLAMA_CPP_DIR}")
+  endif()
 endif()

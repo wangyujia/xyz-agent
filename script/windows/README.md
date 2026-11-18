@@ -59,10 +59,65 @@ powershell -NoProfile -ExecutionPolicy Bypass -File script\windows\start-windows
 
 云端 profile（例如 `deepseek_fast_demo`）需要对应的 API key 环境变量。密钥放在配置或环境里，不要写进这个脚本。
 
+## 进程内 GGUF（可选）
+
+Windows 可把 `THIN_AGENT_WITH_LLAMA_CPP=ON` 编进 `thin_agent`，用 `GgufModel` 直接加载 `models/gguf/*.gguf`，不必外挂 `llama-server`（`lmstudio_demo` 通道仍可走外挂）。
+
+依赖（本机已有时可直接编）：
+
+- 预编译 DLL：`C:\deps-thin-agent\llama.cpp\`（`bin\*.dll` + `lib\llama.lib` / `ggml.lib`）
+- 匹配版本头文件：`C:\deps-thin-agent\llama.cpp-src\`（commit 与 DLL 一致）
+
+```powershell
+$cmake = "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
+& $cmake -S backends\thin_agent -B backends\thin_agent\build-win -DTHIN_AGENT_WITH_LLAMA_CPP=ON
+& $cmake --build backends\thin_agent\build-win --config Release --target thin_agent
+```
+
+离线 profile 下 HybridRouter 会懒加载已注册的 GGUF（优先 Aurum，其次 Qwen0.5B）。导入库若缺失，可在 VS 开发者命令行对 `bin\llama.dll` / `ggml.dll` 用 `dumpbin /exports` + `lib /def` 生成到 `lib\`。
+
+## 模型通道热切换
+
+启动后不必重启 `thin_agent` 也能换路由：`zing_agent` 侧栏「模型通道」下拉会发 `list_profiles` / `switch_profile`。只热替换进程内模型配置，**不**迁移会话/记忆目录（数据目录仍跟启动时的 `-AgentProfile`）。
+
+常见选项：
+
+| 展示名（约） | profile | 说明 |
+| --- | --- | --- |
+| 离线规则 | `offline_demo` | 无外网也能答，默认启动档 |
+| 本地 Aurum（lmstudio） | `lmstudio_demo` | 走本机 OpenAI 兼容端点 `http://127.0.0.1:1234/v1` |
+| 智谱 / DeepSeek 等 | `zai_*` / `deepseek_*` | 需对应 `api_key_env`（如 `GLM_API_KEY`、`DEEPSEEK_API_KEY`） |
+
+切到本地通道时若端点不通，UI 会提示先启动 `llama-server`。
+
+### 本地 llama-server（Aurum）
+
+默认模型路径：`backends\thin_agent\models\gguf\aurum-brain-q4_k_m.gguf`（大文件通常不进 git）。二进制优先找 `C:\deps-thin-agent\llama.cpp\bin\llama-server.exe`。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File script\windows\start-llama-server.ps1
+```
+
+常用参数：`-Model <gguf路径>`、`-Port 1234`、`-GpuLayers 99`、`-LlamaServer <exe>`、`-Stop`。
+
+手动等价命令示例：
+
+```powershell
+& C:\deps-thin-agent\llama.cpp\bin\llama-server.exe `
+  -m backends\thin_agent\models\gguf\aurum-brain-q4_k_m.gguf `
+  --host 127.0.0.1 --port 1234 -c 4096 -ngl 99
+```
+
+就绪后在侧栏选「本地 Aurum」即可；健康检查：`http://127.0.0.1:1234/v1/models`。
+
 ## 停止
 
 ```bat
 script\windows\start-windows.bat -Stop
 ```
 
-这只结束路径匹配本仓库 `build-win\Release` 产物的进程，不会按进程名结束其它目录里的同名程序。
+这只结束路径匹配本仓库 `build-win\Release` 产物的进程，不会按进程名结束其它目录里的同名程序。停止本地推理用：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File script\windows\start-llama-server.ps1 -Stop
+```

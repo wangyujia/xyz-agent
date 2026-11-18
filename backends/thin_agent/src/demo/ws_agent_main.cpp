@@ -777,6 +777,7 @@ int main(int argc, char** argv) {
       return 3;
     }
     g_agent = std::make_unique<thin_agent::AgentService>(cfg, executor, task_engine);
+    g_agent->set_config_source(config, profile);
     // v0.53.25: WS 队列统计注入（/stats 聚合——实时状态卡的队列深度）
     g_agent->set_ws_stats_provider([]() -> nlohmann::json {
       std::lock_guard<std::mutex> lk(g_queue_mu);

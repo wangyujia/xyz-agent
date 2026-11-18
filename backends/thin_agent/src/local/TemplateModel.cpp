@@ -99,8 +99,10 @@ std::string TemplateModel::infer(const std::string& input,
   auto reply = match_keyword(lower);
   if (!reply.empty()) return reply;
 
-  // 无关键词命中 → 返回兜底
-  return fallback_reply_;
+  // 无关键词命中 → 返回空，交给 ModelPool 级联下一层（GgufModel 等）。
+  // HybridRouter 在整条级联失败时才用自己的离线兜底文案。
+  (void)fallback_reply_;
+  return "";
 }
 
 }  // namespace local

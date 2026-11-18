@@ -106,6 +106,137 @@ AgentService::AgentService(DemoConfigCompat cfg,
   init_tools_and_context();
 }
 
+void AgentService::set_config_source(const std::string& yaml_path,
+                                     const std::string& channel) {
+  std::lock_guard<std::mutex> lk(cfg_mu_);
+  config_yaml_path_ = yaml_path;
+  if (!channel.empty()) active_channel_ = channel;
+}
+
+std::string AgentService::active_channel() const {
+  std::lock_guard<std::mutex> lk(cfg_mu_);
+  return active_channel_;
+}
+
+DemoConfigCompat AgentService::cfg_snapshot() const {
+  std::lock_guard<std::mutex> lk(cfg_mu_);
+  return cfg_;
+}
+
+nlohmann::json AgentService::list_channel_profiles() const {
+  std::string yaml;
+  std::string current;
+  {
+    std::lock_guard<std::mutex> lk(cfg_mu_);
+    yaml = config_yaml_path_;
+    current = active_channel_;
+  }
+  nlohmann::json arr = nlohmann::json::array();
+  for (const auto& p : list_demo_profiles(yaml)) {
+    arr.push_back({
+        {"name", p.name},
+        {"mode", p.mode},
+        {"provider", p.provider},
+        {"model", p.model},
+        {"api_base", p.api_base},
+        {"api_key_env", p.api_key_env},
+        {"needs_key", p.needs_key},
+        {"has_key", p.has_key},
+        {"label", p.label},
+    });
+  }
+  DemoConfigCompat snap = cfg_snapshot();
+  return {
+      {"type", "profiles_list"},
+      {"ok", true},
+      {"current", current},
+      {"config_yaml", yaml},
+      {"provider", normalize_provider(snap.provider)},
+      {"model", snap.model_name},
+      {"mode", snap.mode},
+      {"profiles", arr},
+  };
+}
+
+namespace {
+
+bool probe_local_openai_endpoint(const std::string& api_base) {
+  std::string base = api_base.empty() ? "http://127.0.0.1:1234/v1" : api_base;
+  while (!base.empty() && base.back() == '/') base.pop_back();
+  const std::string url = base + "/models";
+  CurlHttpClient http(2000);
+  auto resp = http.get(url, "");
+  return resp.ok && resp.status_code >= 200 && resp.status_code < 300;
+}
+
+}  // namespace
+
+nlohmann::json AgentService::switch_channel(const std::string& channel) {
+  if (channel.empty()) {
+    return {{"type", "profile_switched"}, {"ok", false}, {"error", "missing_profile"}};
+  }
+  std::string yaml;
+  {
+    std::lock_guard<std::mutex> lk(cfg_mu_);
+    yaml = config_yaml_path_;
+  }
+  if (yaml.empty()) {
+    return {{"type", "profile_switched"},
+            {"ok", false},
+            {"error", "config_yaml_unset"},
+            {"hint", "服务启动时未绑定 demo.model.yaml"}};
+  }
+
+  DemoConfigCompat loaded;
+  try {
+    loaded = load_demo_profile_compat(yaml, channel);
+  } catch (const std::exception& e) {
+    return {{"type", "profile_switched"},
+            {"ok", false},
+            {"error", "profile_load_failed"},
+            {"message", e.what()},
+            {"profile", channel}};
+  }
+
+  {
+    std::lock_guard<std::mutex> lk(cfg_mu_);
+    cfg_ = loaded;
+    active_channel_ = channel;
+  }
+
+  std::string warning;
+  const std::string prov = normalize_provider(loaded.provider);
+  bool local_ok = false;
+  bool probed = false;
+  if (prov == "lmstudio") {
+    probed = true;
+    local_ok = probe_local_openai_endpoint(loaded.api_base);
+    if (!local_ok) {
+      warning = "本地端点不可达，请先启动 llama-server（默认 http://127.0.0.1:1234）";
+    }
+  } else if (loaded.mode != "offline" && !loaded.api_key_env.empty() &&
+             prov != "lmstudio") {
+    const char* v = std::getenv(loaded.api_key_env.c_str());
+    if (!(v && *v)) {
+      warning = "未检测到环境变量 " + loaded.api_key_env + "，云调用可能失败";
+    }
+  }
+
+  nlohmann::json out = {
+      {"type", "profile_switched"},
+      {"ok", true},
+      {"profile", channel},
+      {"channel", channel},
+      {"mode", loaded.mode},
+      {"provider", prov},
+      {"model", loaded.model_name},
+      {"api_base", loaded.api_base},
+  };
+  if (probed) out["local_endpoint_ok"] = local_ok;
+  if (!warning.empty()) out["warning"] = warning;
+  return out;
+}
+
 void AgentService::init_local_models() {
   // 注册本地模型到 ModelPool（离线时 HybridRouter 级联使用）
   static bool models_registered = false;
@@ -115,26 +246,41 @@ auto tm = std::make_unique<thin_agent::local::TemplateModel>();
 tm->load();
 thin_agent::local::ModelPool::instance().add(std::move(tm));
 
-// Tier 1: Qwen2.5-0.5B Q2_K (395MB) — 设备侧小模型
-//  注册但不预加载；PC 端通过 ModelPool::load_all() 或手动 load() 激活
+// Tier 1+: 进程内 GGUF（需 THIN_AGENT_WITH_LLAMA_CPP；Windows 可链预编译 DLL）
+//  注册但不预加载；首轮 cascade 时懒加载。priority 越小越优先（Template=更前）。
 #ifdef THIN_AGENT_WITH_LLAMA_CPP
-auto qwen = std::make_unique<thin_agent::local::GgufModel>(
-    "models/gguf/qwen2.5-0.5b-instruct-q2_k.gguf",
-    std::vector<thin_agent::local::ModelCapability>{
-        {"chat", 10, 2048},
-        {"translate", 10, 128}},
-    2048, 4);
-thin_agent::local::ModelPool::instance().add(std::move(qwen));
-
-// Tier 2: Gemma-3-1B Q4_K_M (769MB) — PC 侧更强模型
-//  注册但不预加载，PC 端使用时按需加载
-auto gemma = std::make_unique<thin_agent::local::GgufModel>(
-    "models/gguf/gemma-3-1b-it-q4_k_m.gguf",
-    std::vector<thin_agent::local::ModelCapability>{
-        {"chat", 20, 4096},
-        {"translate", 20, 256}},
-    4096, 4);
-thin_agent::local::ModelPool::instance().add(std::move(gemma));
+{
+  namespace fs = std::filesystem;
+  const char* aurum_path = "models/gguf/aurum-brain-q4_k_m.gguf";
+  if (fs::exists(aurum_path)) {
+    auto aurum = std::make_unique<thin_agent::local::GgufModel>(
+        aurum_path,
+        std::vector<thin_agent::local::ModelCapability>{
+            {"chat", 5, 4096}},
+        4096, 4);
+    thin_agent::local::ModelPool::instance().add(std::move(aurum));
+  }
+  const char* qwen_path = "models/gguf/qwen2.5-0.5b-instruct-q2_k.gguf";
+  if (fs::exists(qwen_path)) {
+    auto qwen = std::make_unique<thin_agent::local::GgufModel>(
+        qwen_path,
+        std::vector<thin_agent::local::ModelCapability>{
+            {"chat", 10, 2048},
+            {"translate", 10, 128}},
+        2048, 4);
+    thin_agent::local::ModelPool::instance().add(std::move(qwen));
+  }
+  const char* gemma_path = "models/gguf/gemma-3-1b-it-q4_k_m.gguf";
+  if (fs::exists(gemma_path)) {
+    auto gemma = std::make_unique<thin_agent::local::GgufModel>(
+        gemma_path,
+        std::vector<thin_agent::local::ModelCapability>{
+            {"chat", 20, 4096},
+            {"translate", 20, 256}},
+        4096, 4);
+    thin_agent::local::ModelPool::instance().add(std::move(gemma));
+  }
+}
 #endif
 
 models_registered = true;
@@ -541,14 +687,22 @@ cron_scheduler_->add_task("patrol_probe", schedule,
         if (!model_override.empty()) filter["model"] = model_override;
         if (!provider_override.empty()) filter["provider"] = provider_override;
         g_cron_filter = filter;
-        // v0.42.3b: 临时覆盖 model/provider（cfg_ 是成员变量，单线程安全）
-        std::string saved_model = cfg_.model_name;
-        std::string saved_provider = cfg_.provider;
-        if (!model_override.empty()) cfg_.model_name = model_override;
-        if (!provider_override.empty()) cfg_.provider = provider_override;
+        // v0.42.3b: 临时覆盖 model/provider（持 cfg_mu_，与热切换互斥）
+        std::string saved_model;
+        std::string saved_provider;
+        {
+          std::lock_guard<std::mutex> lk(cfg_mu_);
+          saved_model = cfg_.model_name;
+          saved_provider = cfg_.provider;
+          if (!model_override.empty()) cfg_.model_name = model_override;
+          if (!provider_override.empty()) cfg_.provider = provider_override;
+        }
         auto result = handle_chat("cron", actual_prompt);
-        cfg_.model_name = saved_model;
-        cfg_.provider = saved_provider;
+        {
+          std::lock_guard<std::mutex> lk(cfg_mu_);
+          cfg_.model_name = saved_model;
+          cfg_.provider = saved_provider;
+        }
         g_cron_filter = nullptr;
 
         // v0.42.1: attach_to_session — 保存会话上下文供后续回复
@@ -1022,11 +1176,19 @@ nlohmann::json AgentService::status_payload() const {
   }
   for (const auto& [ep, st] : LlmCircuitBreaker::instance().snapshot())
     if (st.value("open", false)) circuit_open = true;
+  DemoConfigCompat snap;
+  std::string channel;
+  {
+    std::lock_guard<std::mutex> lk(cfg_mu_);
+    snap = cfg_;
+    channel = active_channel_;
+  }
   return {
-      {"mode", cfg_.mode},
-      {"provider", normalize_provider(cfg_.provider)},
-      {"model", cfg_.model_name},
-      {"fallback", cfg_.fallback},
+      {"mode", snap.mode},
+      {"provider", normalize_provider(snap.provider)},
+      {"model", snap.model_name},
+      {"channel", channel},
+      {"fallback", snap.fallback},
       {"uptime_seconds", std::chrono::duration_cast<std::chrono::seconds>(
                              std::chrono::steady_clock::now() - start_time_)
                              .count()},

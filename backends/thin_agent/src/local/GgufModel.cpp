@@ -6,6 +6,7 @@
 #include <stdexcept>
 
 #ifdef THIN_AGENT_WITH_LLAMA_CPP
+#include "ggml-backend.h"
 #include "llama.h"
 #endif
 
@@ -52,19 +53,28 @@ bool GgufModel::load() {
   if (loaded_) return true;
   if (!std::filesystem::exists(model_path_)) return false;
 
+  // 加载动态后端（Vulkan/CPU DLL）；失败时仍可走内置 CPU
+  static bool backends_loaded = false;
+  if (!backends_loaded) {
+    ggml_backend_load_all();
+    backends_loaded = true;
+  }
+
   llama_model_params model_params = llama_model_default_params();
+  // 负数 = 全部层上 GPU（有 Vulkan/CUDA 后端时）；无后端则回落 CPU
+  model_params.n_gpu_layers = -1;
   llama_context_params ctx_params = llama_context_default_params();
-  ctx_params.n_ctx = n_ctx_;
+  ctx_params.n_ctx = static_cast<uint32_t>(n_ctx_);
   ctx_params.n_threads = n_threads_;
   ctx_params.n_threads_batch = n_threads_;
 
-  llama_model* m = llama_load_model_from_file(model_path_.c_str(), model_params);
+  llama_model* m = llama_model_load_from_file(model_path_.c_str(), model_params);
   if (!m) return false;
   model_ = m;
 
-  llama_context* c = llama_new_context_with_model(m, ctx_params);
+  llama_context* c = llama_init_from_model(m, ctx_params);
   if (!c) {
-    llama_free_model(m);
+    llama_model_free(m);
     model_ = nullptr;
     return false;
   }
@@ -79,7 +89,7 @@ bool GgufModel::load() {
   llama_sampler_chain_add(chain, llama_sampler_init_greedy());
   sampler_ = chain;
 
-  memory_bytes_ = llama_model_size(m) + llama_state_get_size(c);
+  memory_bytes_ = static_cast<size_t>(llama_model_size(m)) + llama_state_get_size(c);
   loaded_ = true;
   return true;
 #endif

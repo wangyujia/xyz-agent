@@ -801,21 +801,31 @@ nlohmann::json AgentService::slash_command(const std::string& session_id,
             {"text", "已请求中断当前会话的进行中任务（协作式——当前轮完成后停止）。"}};
   }
   if (canon == "/model") {
-    // 只读快照：当前主链+fast 通道+冗余池（切换属运行时热改配置，C 档/专项）
+    // 只读快照：当前主链+fast 通道+冗余池；通道热切换见 list_profiles / switch_profile
+    DemoConfigCompat snap = cfg_snapshot();
     nlohmann::json pool = nlohmann::json::array();
-    for (const auto& p : cfg_.cloud_providers)
+    for (const auto& p : snap.cloud_providers)
       pool.push_back({{"provider", p.provider}, {"model", p.model_name}});
     const auto& pol = chat_policy();
+    const std::string channel = active_channel();
     return {
         {"type", "chat_result"}, {"cmd_acked", "/model"}, {"ok", true},
-        {"current", {{"provider", cfg_.provider}, {"model", cfg_.model_name}}},
+        {"current",
+         {{"channel", channel},
+          {"provider", snap.provider},
+          {"model", snap.model_name},
+          {"mode", snap.mode}}},
         {"fast_path",
          {{"model", pol.value("fast_path", nlohmann::json::object())
                         .value("model", "")},
           {"timeout_ms", pol.value("fast_path", nlohmann::json::object())
                               .value("timeout_ms", 0)}}},
         {"pool", pool},
-        {"text", "模型快照（切换功能规划中）"}};
+        {"text",
+         "当前通道：" + (channel.empty() ? "(未命名)" : channel) + " · " +
+             normalize_provider(snap.provider) + " / " +
+             (snap.model_name.empty() ? "(default)" : snap.model_name) +
+             "。可用 list_profiles / switch_profile 热切换，无需重启。"}};
   }
   if (canon == "/tools") {
     nlohmann::json arr = nlohmann::json::array();
@@ -2733,6 +2743,17 @@ nlohmann::json AgentService::handle_request(const std::string& session_id, const
         "every " + std::to_string(interval) + "m",
         "[INTERNAL] goal_auto_reason trigger");
     return finish({{"type", "goal_proactive_enabled"}, {"task", t}});
+  }
+
+  // 配置通道列表（热切换，无需重启）
+  if (type == "list_profiles") {
+    return finish(list_channel_profiles());
+  }
+
+  // 热切换配置通道（只换 cfg_，不改数据目录 profile）
+  if (type == "switch_profile") {
+    const std::string profile = req.value("profile", req.value("channel", ""));
+    return finish(switch_channel(profile));
   }
 
   // v0.9.2: 热切换本地模型

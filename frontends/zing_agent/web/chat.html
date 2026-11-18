@@ -148,7 +148,7 @@
       box-shadow: inset 0 0 0 1.5px rgba(255,255,255,0.35);
     }
     .backend-box { margin-top: 10px; }
-    .backend-box select {
+    .backend-box select, .channel-box select {
       width: 100%;
       background: var(--side-hover);
       color: var(--side-ink);
@@ -158,7 +158,20 @@
       font-size: 12px;
       outline: none;
     }
-    .backend-box select option { color: var(--ink); }
+    .backend-box select option, .channel-box select option { color: var(--ink); }
+    .channel-box { margin-top: 10px; }
+    .channel-box .ch-label {
+      font-size: 11px;
+      color: var(--side-ink-soft);
+      margin-bottom: 4px;
+    }
+    .channel-meta {
+      margin-top: 5px;
+      font-size: 11px;
+      color: var(--side-ink-soft);
+      line-height: 1.35;
+      word-break: break-all;
+    }
     .conn-row {
       display: flex;
       align-items: center;
@@ -527,6 +540,13 @@
       <h1>Zing Agent</h1>
       <div class="backend-box">
         <select id="backendSel" onchange="onBackendChange()"></select>
+      </div>
+      <div class="channel-box">
+        <div class="ch-label">模型通道</div>
+        <select id="channelSel" onchange="onChannelChange()" disabled>
+          <option value="">连接后加载…</option>
+        </select>
+        <div class="channel-meta" id="channelMeta">未选择</div>
       </div>
       <div class="conn-row">
         <span id="connDot" class="conn-dot"></span>
@@ -977,6 +997,71 @@ function onBackendChange() {
   connectWs();
 }
 
+/* ── 模型通道（热切换 profile，无需重启后端）── */
+let channelSwitching = false;
+function requestChannelList() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  sendRaw({ type: 'list_profiles' });
+}
+function fillChannelSelect(obj) {
+  const sel = $('channelSel');
+  if (!sel) return;
+  const profiles = Array.isArray(obj.profiles) ? obj.profiles : [];
+  const current = String(obj.current || '');
+  let html = '';
+  if (!profiles.length) {
+    html = '<option value="">无可用通道</option>';
+    sel.disabled = true;
+  } else {
+    profiles.forEach(p => {
+      const name = String(p.name || '');
+      let label = String(p.label || name);
+      if (p.needs_key && !p.has_key) label += ' · 缺 Key';
+      html += '<option value="' + esc(name) + '">' + esc(label) + '</option>';
+    });
+    sel.disabled = false;
+  }
+  sel.innerHTML = html;
+  channelSwitching = true;
+  if (current) {
+    const opts = sel.options;
+    for (let i = 0; i < opts.length; i++) {
+      if (opts[i].value === current) { sel.selectedIndex = i; break; }
+    }
+  }
+  channelSwitching = false;
+  applyChannelStatus(obj);
+}
+function applyChannelStatus(st) {
+  const meta = $('channelMeta');
+  if (!meta || !st) return;
+  const channel = st.channel || st.profile || st.current || '';
+  const provider = st.provider || '';
+  const model = st.model || '';
+  const mode = st.mode || '';
+  const parts = [];
+  if (channel) parts.push(channel);
+  if (mode) parts.push('mode=' + mode);
+  if (provider) parts.push(provider);
+  if (model) parts.push(model);
+  meta.textContent = parts.length ? parts.join(' · ') : '未选择';
+  if (st.local_endpoint_ok === false) {
+    meta.textContent += ' · 本地端点未就绪';
+  }
+}
+function onChannelChange() {
+  if (channelSwitching) return;
+  const sel = $('channelSel');
+  if (!sel || !sel.value) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showBanner('未连接后端，无法切换通道');
+    return;
+  }
+  sel.disabled = true;
+  sendRaw({ type: 'switch_profile', profile: sel.value });
+  setTimeout(() => { if (sel) sel.disabled = false; }, 800);
+}
+
 async function discover() {
   if (typeof window.discoverBackends === 'function') {
     try {
@@ -990,6 +1075,13 @@ function setConn(on, text) {
   $('connDot').classList.toggle('on', on);
   $('connText').textContent = text || (on ? '已连接' : '未连接');
   $('sendBtn').disabled = !on;
+  const ch = $('channelSel');
+  if (ch && !on) {
+    ch.disabled = true;
+    if (!ch.options.length || ch.options[0].value === '') {
+      ch.innerHTML = '<option value="">连接后加载…</option>';
+    }
+  }
 }
 
 function showBanner(msg) { const b = $('banner'); b.textContent = msg; b.classList.add('show'); }
@@ -1005,6 +1097,7 @@ function connectWs() {
     flushPendingQueue();  // v15: 重连即重发排队消息
     hideBanner();
     setConn(true);
+    requestChannelList();
   };
   ws.onclose = () => {
     setConn(false);
@@ -1198,6 +1291,26 @@ function handleIncoming(obj) {
   if (t === 'hello') {
     const v = obj.version ? '（' + obj.version + '）' : '';
     setConn(true, '已连接 ' + v);
+    if (obj.status) applyChannelStatus(obj.status);
+    requestChannelList();
+    return;
+  }
+  if (t === 'profiles_list') {
+    fillChannelSelect(obj);
+    return;
+  }
+  if (t === 'profile_switched') {
+    if (obj.ok === false) {
+      pushMsg('system', '❌ 切换通道失败：' + String(obj.error || obj.message || 'unknown'));
+      requestChannelList();
+      return;
+    }
+    applyChannelStatus(obj);
+    if (obj.warning) showBanner(String(obj.warning));
+    else hideBanner();
+    const label = String(obj.profile || obj.channel || '');
+    pushMsg('system', '已切换模型通道：' + label +
+      (obj.provider ? '（' + obj.provider + (obj.model ? ' / ' + obj.model : '') + '）' : ''));
     return;
   }
   if (t === 'error') {

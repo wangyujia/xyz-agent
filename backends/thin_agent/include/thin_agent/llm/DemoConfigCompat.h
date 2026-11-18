@@ -81,4 +81,20 @@ struct DemoConfigCompat {
 /// @throws std::runtime_error 文件打不开或 profile 不存在
 DemoConfigCompat load_demo_profile_compat(const std::string& yaml_path, const std::string& profile);
 
+/// 配置通道列表项（供 UI 下拉 / list_profiles）。
+struct DemoProfileInfo {
+  std::string name;         ///< profile 键名，如 lmstudio_demo
+  std::string mode;         ///< offline / cloud / auto
+  std::string provider;     ///< 云/本地 provider
+  std::string model;        ///< 模型名（可空，如 lmstudio 用当前加载模型）
+  std::string api_base;     ///< API 根地址
+  std::string api_key_env;  ///< API Key 环境变量名
+  bool needs_key{false};    ///< 是否通常需要 API Key（lmstudio/offline 为 false）
+  bool has_key{false};      ///< 进程环境中是否已能读到 Key
+  std::string label;        ///< UI 展示名
+};
+
+/// 列出 yaml 中全部 profiles（不抛；文件打不开返回空）。
+std::vector<DemoProfileInfo> list_demo_profiles(const std::string& yaml_path);
+
 }  // namespace thin_agent

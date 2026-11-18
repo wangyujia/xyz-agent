@@ -410,6 +410,7 @@ THIN_API thin_agent_t* thin_agent_create(const thin_agent_config_t* config) {
     try {
         impl->service = std::make_unique<thin_agent::AgentService>(
             impl->demo_cfg, impl->executor, impl->task_engine);
+        impl->service->set_config_source(yaml_path, profile);
     } catch (const std::exception& e) {
         impl->set_error(std::string("agent service create failed: ") + e.what());
         delete impl;

@@ -179,6 +179,21 @@ class AgentService {
     ws_stats_provider_ = std::move(fn);
   }
 
+  /// 记录启动时使用的 yaml 与逻辑通道名（热切换不改数据目录 profile）。
+  void set_config_source(const std::string& yaml_path, const std::string& channel);
+
+  /// 列出可热切换的配置通道（来自 demo.model.yaml profiles）。
+  nlohmann::json list_channel_profiles() const;
+
+  /// 运行时热切换模型通道：只替换 cfg_，不调用 thin_agent_set_profile。
+  nlohmann::json switch_channel(const std::string& channel);
+
+  /// 当前逻辑通道名（如 lmstudio_demo）。
+  std::string active_channel() const;
+
+  /// 线程安全配置快照（长耗时云调用前可拷贝）。
+  DemoConfigCompat cfg_snapshot() const;
+
   /// v0.47.3: 检查并清除中断标志（FC 循环内部调用，private）
   bool check_and_clear_abort(const std::string& session_id);
 
@@ -485,6 +500,9 @@ class AgentService {
   void finalize_fc_run_locked(const std::string& session_id, const char* status);
 
   DemoConfigCompat cfg_;                              ///< 运行配置（模式、模型、预算等）
+  mutable std::mutex cfg_mu_;                         ///< 保护 cfg_ / 通道名热切换
+  std::string config_yaml_path_;                      ///< 启动时的 yaml 路径（热切换重读）
+  std::string active_channel_;                        ///< 逻辑通道名（可与数据目录 profile 不同）
   std::shared_ptr<ActionExecutor> executor_;          ///< 本地动作执行器
   std::shared_ptr<TaskEngine> task_engine_;           ///< 任务引擎（可为空）
   std::shared_ptr<agent::MemoryManager> memory_manager_;  ///< RAG 记忆管理器

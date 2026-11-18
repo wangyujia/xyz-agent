@@ -1,5 +1,6 @@
 #include "thin_agent/llm/DemoConfigCompat.h"
 
+#include <cstdlib>
 #include <fstream>
 #include <stdexcept>
 
@@ -151,6 +152,93 @@ DemoConfigCompat load_demo_profile_compat(const std::string& yaml_path, const st
 
   if (!in_target) throw std::runtime_error("profile not found: " + profile);
   return cfg;
+}
+
+namespace {
+
+std::string profile_label_for(const DemoProfileInfo& info) {
+  if (info.name == "offline_demo") return "离线规则";
+  if (info.name == "lmstudio_demo" || info.provider == "lmstudio")
+    return "本地 Aurum（lmstudio）";
+  if (info.name.find("zai_") == 0 || info.provider.find("openai-compatible") == 0) {
+    if (info.model.find("glm") != std::string::npos || info.name.find("zai") != std::string::npos)
+      return "智谱 " + (info.model.empty() ? info.name : info.model);
+  }
+  if (info.name.find("deepseek") != std::string::npos || info.provider == "deepseek")
+    return "DeepSeek " + (info.model.empty() ? info.name : info.model);
+  if (info.provider == "github-copilot") return "GitHub Copilot";
+  if (!info.model.empty()) return info.name + " · " + info.model;
+  return info.name;
+}
+
+bool profile_needs_key(const DemoProfileInfo& info) {
+  if (info.mode == "offline") return false;
+  if (info.provider == "lmstudio" || info.provider == "lm-studio" ||
+      info.provider == "local-lmstudio")
+    return false;
+  return !info.api_key_env.empty();
+}
+
+}  // namespace
+
+std::vector<DemoProfileInfo> list_demo_profiles(const std::string& yaml_path) {
+  std::vector<DemoProfileInfo> out;
+  std::ifstream in(yaml_path);
+  if (!in.is_open()) in.open("../" + yaml_path);
+  if (!in.is_open()) return out;
+
+  std::string line;
+  bool in_profiles = false;
+  DemoProfileInfo cur;
+  bool have = false;
+
+  auto flush = [&]() {
+    if (!have || cur.name.empty()) return;
+    cur.needs_key = profile_needs_key(cur);
+    if (cur.needs_key && !cur.api_key_env.empty()) {
+      const char* v = std::getenv(cur.api_key_env.c_str());
+      cur.has_key = (v && *v);
+    } else {
+      cur.has_key = !cur.needs_key;
+    }
+    cur.label = profile_label_for(cur);
+    out.push_back(cur);
+    cur = DemoProfileInfo{};
+    have = false;
+  };
+
+  while (std::getline(in, line)) {
+    if (starts_with(line, "profiles:")) {
+      in_profiles = true;
+      continue;
+    }
+    if (!in_profiles) continue;
+
+    // 同级 profile 键：两位空格 + 名称 + 冒号，第三位不是空格
+    if (starts_with(line, "  ") && line.size() > 2 && line[2] != ' ' &&
+        line.find(':') != std::string::npos) {
+      flush();
+      auto colon = line.find(':');
+      cur.name = trim(line.substr(2, colon - 2));
+      have = true;
+      continue;
+    }
+
+    if (!have) continue;
+
+    auto pick = [&](const std::string& key) -> std::string {
+      const std::string k = "    " + key + ":";
+      if (!starts_with(line, k)) return "";
+      return unquote(trim(strip_inline_comment(trim(line.substr(k.size())))));
+    };
+    if (auto v = pick("mode"); !v.empty()) cur.mode = v;
+    if (auto v = pick("provider"); !v.empty()) cur.provider = v;
+    if (auto v = pick("name"); !v.empty()) cur.model = v;
+    if (auto v = pick("api_base"); !v.empty()) cur.api_base = v;
+    if (auto v = pick("api_key_env"); !v.empty()) cur.api_key_env = v;
+  }
+  flush();
+  return out;
 }
 
 }  // namespace thin_agent
