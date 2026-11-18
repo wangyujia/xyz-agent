@@ -89,6 +89,9 @@ static void init_service_manager() {
   #define HAS_EMBEDDED_HTML 0
 #endif
 
+// 异步远端线程在窗口关闭后不能再 resolve。Windows 不编组播发现，这个标志仍要可见。
+static std::atomic<bool> g_zing_alive{false};
+
 #ifndef THIN_NO_DISCOVERY
 static std::mutex               g_servers_mutex;
 static std::vector<std::string> g_servers_json;
@@ -131,10 +134,6 @@ static void do_discovery(int timeout_ms = 2000) {
     thin_discovery_probe(dc, timeout_ms, on_found, nullptr);
     thin_discovery_client_destroy(dc);
 }
-
-// v17: 异步远端线程回调前的窗口存活检查——detach 线程跑在 webview 析构后
-// 时 resolve() 是 UB。窗口正常关闭路径先置 false。
-static std::atomic<bool> g_zing_alive{false};
 
 static void bind_discover(const std::string& seq, const std::string& /*req*/, void* arg) {
     auto* w = static_cast<webview::webview*>(arg);
@@ -398,3 +397,11 @@ int main(int argc, char** argv) {
     }
     return 0;
 }
+
+#ifdef _WIN32
+#include <stdlib.h>
+#include <windows.h>
+int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
+    return main(__argc, __argv);
+}
+#endif

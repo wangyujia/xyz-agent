@@ -6,7 +6,9 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 
 namespace thin_agent {
 
@@ -243,11 +245,15 @@ static std::pair<int, std::string> exec_cmd(const std::string& cmd) {
 #else
   std::string full_cmd = "timeout 300 " + cmd + " 2>&1";
 #endif
+#ifndef _MSC_VER
   #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wignored-attributes"
+#endif
   std::unique_ptr<FILE, decltype(&pclose)> pipe(
       popen(full_cmd.c_str(), "r"), pclose);
+#ifndef _MSC_VER
 #pragma GCC diagnostic pop  // v0.53.16: 惯用法告警压制
+#endif
   if (!pipe) return {-1, "popen failed"};
   while (fgets(buf.data(), buf.size(), pipe.get()) != nullptr) {
     output += buf.data();

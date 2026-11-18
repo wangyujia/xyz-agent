@@ -9,6 +9,7 @@
 #include <map>
 #include <iostream>
 #include <memory>
+#include <filesystem>
 #include <fstream>
 #include <mutex>
 #include <set>
@@ -738,6 +739,21 @@ int main(int argc, char** argv) {
   }
   if (!g_auth_token.empty()) {
     std::cout << "[ws_agent_cpp] auth: ENABLED (token len=" << g_auth_token.size() << ")\n";
+  }
+  // 用户目录里还没有 demo.model.yaml 时，用仓库自带的配置（从仓库根或
+  // backends/thin_agent 启动都能找到）。显式传入的 --config 不存在则不替换。
+  if (!std::filesystem::exists(config)) {
+    const char* rels[] = {
+        "config/demo.model.yaml",
+        "backends/thin_agent/config/demo.model.yaml",
+    };
+    for (const char* rel : rels) {
+      if (std::filesystem::exists(rel)) {
+        std::cout << "[ws_agent_cpp] config fallback: " << config << " -> " << rel << "\n";
+        config = rel;
+        break;
+      }
+    }
   }
 
   try {

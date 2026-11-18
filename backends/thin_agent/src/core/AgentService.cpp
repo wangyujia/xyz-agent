@@ -21,7 +21,11 @@
 #include <cctype>
 #include <regex>
 #include <thread>
+#ifdef _WIN32
+#include <direct.h>
+#else
 #include <unistd.h>
+#endif
 #include <unordered_set>
 #include <sstream>
 #include <unordered_map>

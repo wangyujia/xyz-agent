@@ -553,7 +553,8 @@ SandboxExecutor::Result SandboxExecutor::execute_windows(const std::string& comm
   HANDLE hRead, hWrite;
   SECURITY_ATTRIBUTES sa = {sizeof(sa), nullptr, TRUE};
   if (!CreatePipe(&hRead, &hWrite, &sa, 0)) {
-    return execute_fallback(command, config);
+    result.error = "CreatePipe_failed";
+    return result;
   }
   SetHandleInformation(hRead, HANDLE_FLAG_INHERIT, 0);
 

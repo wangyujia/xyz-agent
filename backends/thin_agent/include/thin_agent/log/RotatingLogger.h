@@ -157,8 +157,12 @@ private:
                       now.time_since_epoch()) %
                   1000;
         std::time_t t = std::chrono::system_clock::to_time_t(now);
-        std::tm tm_buf;
+        std::tm tm_buf{};
+#ifdef _WIN32
+        localtime_s(&tm_buf, &t);
+#else
         localtime_r(&t, &tm_buf);
+#endif
 
         char ts[32];
         const int len = std::snprintf(ts, sizeof(ts), "[%02d:%02d:%02d.%03lld] ",

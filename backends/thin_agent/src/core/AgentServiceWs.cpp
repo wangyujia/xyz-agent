@@ -22,7 +22,9 @@
 #include <cctype>
 #include <regex>
 #include <thread>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 #include <unordered_set>
 #include <sstream>
 #include <unordered_map>

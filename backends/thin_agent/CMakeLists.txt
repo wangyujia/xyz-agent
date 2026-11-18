@@ -20,8 +20,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(THIN_AGENT_WITH_FDBUS "Enable real FDBus adapter (device runtime only)" OFF)
-option(THIN_AGENT_BUILD_TESTS "Build unit+demo tests" ON)
-option(THIN_AGENT_BUILD_IM_GATEWAY "Build thin_agent_gw IM gateway (needs OpenSSL)" ON)
+# Windows 本机没有 pthread / 整套 ctest 夹具，默认不编测试和 IM 网关（网关要 OpenSSL）。
+if(WIN32)
+  set(_ta_tests_default OFF)
+  set(_ta_gw_default OFF)
+else()
+  set(_ta_tests_default ON)
+  set(_ta_gw_default ON)
+endif()
+option(THIN_AGENT_BUILD_TESTS "Build unit+demo tests" ${_ta_tests_default})
+option(THIN_AGENT_BUILD_IM_GATEWAY "Build thin_agent_gw IM gateway (needs OpenSSL)" ${_ta_gw_default})
 option(THIN_AGENT_EMBEDDED_CAM "Use embedded camera runtime default paths" OFF)
 option(THIN_AGENT_WITH_LLAMA_CPP "Enable local GGUF model inference via llama.cpp" OFF)
 
@@ -37,9 +45,43 @@ option(THIN_AGENT_WITH_LLAMA_CPP "Enable local GGUF model inference via llama.cp
 # 注：third_party 头文件（onnxruntime）自身含同名遮蔽，策略禁改 → 其 include 置为 SYSTEM
 # （见下方 target_include_directories(... SYSTEM ...)），门禁只约束**本仓源码**。
 if(MSVC)
-  add_compile_options(/we4456 /we4457 /we4458)
+  # 源码里有指定初始化（C++20）。GCC 在 C++17 下当扩展放行，MSVC 不放行。
+  set(CMAKE_CXX_STANDARD 20)
+  add_compile_options(/we4456 /we4457 /we4458 /utf-8)
+  add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_DEPRECATE)
 else()
   add_compile_options(-Wshadow=local -Werror=shadow)
+endif()
+
+# Windows：优先用 third_party/win-deps（或 -DTA_WIN_DEPS）里自行编好的
+# SQLite amalgamation + Schannel 静态 curl。没有这份前缀时再走 vcpkg 的 find_package。
+# Linux 仍直接链系统库名。
+if(WIN32)
+  if(NOT TA_WIN_DEPS)
+    set(TA_WIN_DEPS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/win-deps")
+  endif()
+  if(EXISTS "${TA_WIN_DEPS}/sqlite3.c")
+    add_library(ta_sqlite3 STATIC "${TA_WIN_DEPS}/sqlite3.c")
+    target_include_directories(ta_sqlite3 PUBLIC "${TA_WIN_DEPS}")
+    target_compile_definitions(ta_sqlite3 PUBLIC
+      SQLITE_ENABLE_FTS5 SQLITE_ENABLE_JSON1 SQLITE_THREADSAFE=1)
+    if(MSVC)
+      target_compile_options(ta_sqlite3 PRIVATE /wd4996)
+    endif()
+    add_library(SQLite::SQLite3 ALIAS ta_sqlite3)
+  else()
+    find_package(SQLite3 REQUIRED)
+  endif()
+  if(EXISTS "${TA_WIN_DEPS}/lib/cmake/CURL/CURLConfig.cmake")
+    find_package(CURL CONFIG REQUIRED PATHS "${TA_WIN_DEPS}" NO_DEFAULT_PATH)
+  else()
+    find_package(CURL REQUIRED)
+  endif()
+  set(TA_SQLITE SQLite::SQLite3)
+  set(TA_CURL CURL::libcurl)
+else()
+  set(TA_SQLITE sqlite3)
+  set(TA_CURL curl)
 endif()
 
 include(cmake/OnnxRuntime.cmake)
@@ -174,8 +216,17 @@ target_include_directories(thin_agent_core
 target_include_directories(thin_agent_core SYSTEM PUBLIC
   ${THIN_AGENT_ONNXRUNTIME_INCLUDE}
 )
+if(MSVC)
+  target_compile_options(thin_agent_core PUBLIC "/FIthin_agent/WinCrt.h")
+endif()
 
-target_link_libraries(thin_agent_core PUBLIC sqlite3 curl "${THIN_AGENT_ONNXRUNTIME_LIB}" dl)
+if(WIN32)
+  target_link_libraries(thin_agent_core PUBLIC
+    ${TA_SQLITE} ${TA_CURL} "${THIN_AGENT_ONNXRUNTIME_LIB}"
+    ws2_32 crypt32 secur32 bcrypt)
+else()
+  target_link_libraries(thin_agent_core PUBLIC sqlite3 curl "${THIN_AGENT_ONNXRUNTIME_LIB}" dl)
+endif()
 target_compile_definitions(thin_agent_core PUBLIC
   THIN_AGENT_EMBEDDED_CAM=$<BOOL:${THIN_AGENT_EMBEDDED_CAM}>
 )
@@ -195,7 +246,7 @@ add_library(thin_agent_core_shared SHARED
   src/api/discovery.cpp
 )
 target_link_libraries(thin_agent_core_shared PRIVATE thin_agent_core
-  sqlite3 curl "${THIN_AGENT_ONNXRUNTIME_LIB}" mongoose_vendor)
+  ${TA_SQLITE} ${TA_CURL} "${THIN_AGENT_ONNXRUNTIME_LIB}" mongoose_vendor)
 target_include_directories(thin_agent_core_shared PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   ${CMAKE_CURRENT_SOURCE_DIR}/third_party/mongoose
@@ -1371,11 +1422,25 @@ add_executable(thin_agent
   src/demo/ws_agent_main.cpp
 )
 target_link_libraries(thin_agent PRIVATE mongoose_vendor)
-# --whole-archive: 确保静态库所有符号都进入动态符号表，供 dlopen 插件解析
-target_link_libraries(thin_agent PRIVATE
-  -Wl,--whole-archive thin_agent_core -Wl,--no-whole-archive)
-# 导出符号供 dlopen 插件解析 (如 SkillRegistry::register_cpp_handler)
-target_link_options(thin_agent PRIVATE -rdynamic)
+if(WIN32)
+  # MSVC 没有 --whole-archive / -rdynamic。插件 DLL 不能从 exe 反查 C++ 符号，
+  # 本阶段只保证 thin_agent.exe 本身可链接。
+  target_link_libraries(thin_agent PRIVATE thin_agent_core)
+  get_filename_component(_onnx_bindir "${THIN_AGENT_ONNXRUNTIME_LIB}" DIRECTORY)
+  if(EXISTS "${_onnx_bindir}/onnxruntime.dll")
+    add_custom_command(TARGET thin_agent POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${_onnx_bindir}/onnxruntime.dll"
+        "$<TARGET_FILE_DIR:thin_agent>"
+      COMMENT "Copy onnxruntime.dll next to thin_agent.exe")
+  endif()
+else()
+  # --whole-archive: 确保静态库所有符号都进入动态符号表，供 dlopen 插件解析
+  target_link_libraries(thin_agent PRIVATE
+    -Wl,--whole-archive thin_agent_core -Wl,--no-whole-archive)
+  # 导出符号供 dlopen 插件解析 (如 SkillRegistry::register_cpp_handler)
+  target_link_options(thin_agent PRIVATE -rdynamic)
+endif()
 
 # IM Gateway：出站长连接，连接本地 thin_agent WS（x86 网关部署；嵌入式设备通常不编）
 if(THIN_AGENT_BUILD_IM_GATEWAY)
@@ -1438,7 +1503,11 @@ add_executable(thin_agentd
 target_include_directories(thin_agentd PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
-target_link_libraries(thin_agentd PRIVATE dl)
+if(WIN32)
+  target_link_libraries(thin_agentd PRIVATE ws2_32)
+else()
+  target_link_libraries(thin_agentd PRIVATE dl)
+endif()
 
 # thin_agent_cli：前端 CLI（WS 客户端 + 组播发现 + REPL）
 # 不依赖 thin_agent_core，仅用 mongoose + nlohmann/json
@@ -1536,7 +1605,7 @@ add_library(skill_kb SHARED
 target_include_directories(skill_kb PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
-target_link_libraries(skill_kb PRIVATE sqlite3)
+target_link_libraries(skill_kb PRIVATE ${TA_SQLITE})
 target_compile_definitions(skill_kb PRIVATE THIN_AGENT_EMBEDDED_CAM=0 THIN_AGENT_WITH_FDBUS=0)
 install(TARGETS skill_kb
   LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/plugins/dev

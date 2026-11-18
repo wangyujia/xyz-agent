@@ -1,10 +1,12 @@
 #include "thin_agent/local/OnnxChatModel.h"
+#include "thin_agent/WinPath.h"
 
 #include <algorithm>
 #include <cstring>
 #include <filesystem>
 #include <numeric>
 #include <stdexcept>
+#include <string>
 #include <unordered_map>
 
 // ONNX Runtime C API (use project include path)
@@ -60,7 +62,13 @@ bool OnnxChatModel::load() {
   }
   if (g_ort->SetIntraOpNumThreads(opts, n_threads_) != nullptr) {}  // v0.53.16: 消费返回值
 
-  if (g_ort->CreateSession(env, model_path_.c_str(), opts, &sess) != nullptr) {
+#ifdef _WIN32
+  const std::wstring wpath = win_path(model_path_);
+  const wchar_t* ort_path = wpath.c_str();
+#else
+  const char* ort_path = model_path_.c_str();
+#endif
+  if (g_ort->CreateSession(env, ort_path, opts, &sess) != nullptr) {
     g_ort->ReleaseSessionOptions(opts);
     g_ort->ReleaseEnv(env);
     return false;

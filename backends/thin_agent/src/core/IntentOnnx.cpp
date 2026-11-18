@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <string>
 #include <unordered_map>
 
 #include "onnxruntime_cxx_api.h"
@@ -13,6 +14,7 @@
 #include "thin_agent/core/ChatPolicy.h"
 #include "thin_agent/core/DialogSlotRecall.h"
 #include "thin_agent/core/IntentScorer.h"
+#include "thin_agent/WinPath.h"
 
 // IntentOnnx：ONNX Runtime 轻量意图推理（profile stub + 多意图特征分类器）。
 
@@ -209,7 +211,12 @@ bool ensure_multiclass_session(std::string* error) {
     Ort::SessionOptions opts;
     opts.SetIntraOpNumThreads(1);
     opts.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_BASIC);
+#ifdef _WIN32
+    const std::wstring wpath = win_path(path);
+    holder.session = std::make_unique<Ort::Session>(*holder.env, wpath.c_str(), opts);
+#else
     holder.session = std::make_unique<Ort::Session>(*holder.env, path.c_str(), opts);
+#endif
     holder.model_path = path;
     return true;
   } catch (const std::exception& e) {
@@ -294,7 +301,12 @@ bool infer_profile_confidence_onnx(const std::string& model_path,
     opts.SetIntraOpNumThreads(1);
     opts.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_DISABLE_ALL);
 
+#ifdef _WIN32
+    const std::wstring wpath = win_path(model_path);
+    Ort::Session session(env, wpath.c_str(), opts);
+#else
     Ort::Session session(env, model_path.c_str(), opts);
+#endif
 
     std::vector<int64_t> input_ids(8, 1);
     std::vector<int64_t> input_shape = {1, 8};

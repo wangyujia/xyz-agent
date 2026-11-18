@@ -200,20 +200,24 @@ nlohmann::json KbSearcher::search(const std::string& query, int limit) {
   }
   while (step_rc == SQLITE_ROW) {
     nlohmann::json doc;
+    auto col = [&](int i) -> const char* {
+      const char* p = reinterpret_cast<const char*>(sqlite3_column_text(stmt, i));
+      return p ? p : "";
+    };
     if (has_repo) {
-      doc["repo"] = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)) ?: "";
-      doc["path"] = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1)) ?: "";
-      doc["filename"] = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2)) ?: "";
-      doc["extension"] = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3)) ?: "";
-      doc["symbols"] = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4)) ?: "";
-      doc["snippet"] = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5)) ?: "";
+      doc["repo"] = col(0);
+      doc["path"] = col(1);
+      doc["filename"] = col(2);
+      doc["extension"] = col(3);
+      doc["symbols"] = col(4);
+      doc["snippet"] = col(5);
     } else {
       doc["repo"] = "";
-      doc["path"] = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)) ?: "";
-      doc["filename"] = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1)) ?: "";
-      doc["extension"] = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2)) ?: "";
-      doc["symbols"] = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3)) ?: "";
-      doc["snippet"] = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4)) ?: "";
+      doc["path"] = col(0);
+      doc["filename"] = col(1);
+      doc["extension"] = col(2);
+      doc["symbols"] = col(3);
+      doc["snippet"] = col(4);
     }
     results.push_back(std::move(doc));
     step_rc = sqlite3_step(stmt);

@@ -280,8 +280,11 @@ class KbIndexer {
       if (rc != SQLITE_OK) { if (stmt) sqlite3_finalize(stmt); }
       else if (stmt) {
         while (sqlite3_step(stmt) == SQLITE_ROW) {
-          std::string key = std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1)) ?: "")
-                          + "::" + std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2)) ?: "");
+          auto col = [&](int i) -> const char* {
+            const char* p = reinterpret_cast<const char*>(sqlite3_column_text(stmt, i));
+            return p ? p : "";
+          };
+          std::string key = std::string(col(1)) + "::" + col(2);
           if (seen_paths.find(key) == seen_paths.end()) {
             char del_sql[64];
             snprintf(del_sql, sizeof(del_sql), "DELETE FROM codebase WHERE rowid = %lld", (long long)sqlite3_column_int64(stmt, 0));
