@@ -288,6 +288,11 @@ nlohmann::json AgentService::make_local_reply(ChatContext& ctx,
       observation["translation_applied"] = true;
     }
   }
+  if (reply_text.find_first_not_of(" \t\r\n") == std::string::npos) {
+    reply_text = (query_lang == "en")
+        ? "I recognized the question, but did not produce a specific answer. Try rephrasing, or say \"help\"."
+        : "我识别了这个问题，但没有生成具体内容。可以换个说法，或输入「帮助」看我能做的事。";
+  }
 
   auto result = nlohmann::json{
       {"type", "chat_result"},
@@ -443,6 +448,16 @@ nlohmann::json AgentService::chat_route_local_intents(ChatContext& ctx) {
       }
 
       if (local_spec.handler == "profile") {
+        if (is_offline_help_query(ctx.text)) {
+          return make_local_reply(ctx,
+              "local_profile",
+              "offline_help_list",
+              offline_help_text(),
+              nlohmann::json::object(),
+              nlohmann::json::array(),
+              local_spec.name,
+              0.99);
+        }
         // 文件操作请求（含路径）不应被 profile 关键词子串误判
         // v0.45.4: 复用 is_file_op_request（含中文操作词）
         const bool file_op_context = AgentService::is_file_op_request(ctx.text_lower);

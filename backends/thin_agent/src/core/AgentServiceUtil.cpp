@@ -276,6 +276,57 @@ bool is_skills_only_query(const std::string& text) {
   return false;
 }
 
+/// 整句就是在要功能列表，而不是句子里顺带出现「帮助」。
+bool is_offline_help_query(const std::string& text) {
+  std::string norm = trim_copy(text);
+  while (!norm.empty()) {
+    const unsigned char c = static_cast<unsigned char>(norm.back());
+    if (c == '?' || c == '!') {
+      norm.pop_back();
+      continue;
+    }
+    if (norm.size() >= 3) {
+      const std::string tail = norm.substr(norm.size() - 3);
+      if (tail == "？" || tail == "！" || tail == "。") {
+        norm.resize(norm.size() - 3);
+        continue;
+      }
+    }
+    break;
+  }
+  norm = trim_copy(std::move(norm));
+  for (char& ch : norm) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  return norm == "帮助" || norm == "help" || norm == "功能列表" ||
+         norm == "使用说明" || norm == "帮助手册";
+}
+
+/// 离线功能列表，与 chat_policy.offline_general 里「帮助」那条规则同一份文案。
+std::string offline_help_text() {
+  const auto& policy = chat_policy();
+  if (policy.contains("offline_general") && policy["offline_general"].is_object()) {
+    const auto& og = policy["offline_general"];
+    if (og.contains("rules") && og["rules"].is_array()) {
+      for (const auto& rule : og["rules"]) {
+        if (!rule.is_object() || !rule.contains("keywords") || !rule["keywords"].is_array()) continue;
+        if (!rule.contains("reply") || !rule["reply"].is_string()) continue;
+        for (const auto& kw : rule["keywords"]) {
+          if (kw.is_string() && (kw.get<std::string>() == "帮助" || kw.get<std::string>() == "help")) {
+            return rule["reply"].get<std::string>();
+          }
+        }
+      }
+    }
+  }
+  return "离线模式下可用功能：\n"
+         "• 状态查询 — 输入「状态」或「模型」\n"
+         "• 天气查询 — 输入「城市名+天气」，如「北京天气」\n"
+         "• 短期记忆 — 输入「短期记忆」\n"
+         "• 历史记忆 — 输入「历史记忆」\n"
+         "• 记忆搜索 — 输入「搜索记忆 关键词」\n"
+         "• 事件记录 — 输入「最近事件」\n"
+         "• 设备控制 — 输入「拍照」「录像」\n";
+}
+
 /// 按当前角色动态生成自我介绍文本（detailed 模式显示完整能力清单）
 std::string build_profile_body(const std::string& lang,
                                       const agent::AgentRoleManager* role_mgr,
@@ -471,6 +522,20 @@ std::string build_profile_body(const std::string& lang,
         } else {
           body += "- " + t + "\n";
         }
+      }
+    }
+
+    // 默认 worker 的工具列表为空（表示不限制，不是没有能力）。
+    // 只问技能时若这里直接返回空串，界面会把 chat_result 丢掉，看起来像没回应。
+    if (body.find_first_not_of(" \t\r\n") == std::string::npos) {
+      if (is_zh) {
+        body = "你好！我是 " + display_zh + "。\n\n"
+               "我是你的 AI 助手。离线时可以查状态、天气和记忆，也可以处理文件和命令。\n"
+               "输入「帮助」可以看功能列表。\n";
+      } else {
+        body = "Hello! I'm " + display_en + ".\n\n"
+               "I can help with status, weather, memory, files, and commands while offline.\n"
+               "Say \"help\" for the feature list.\n";
       }
     }
 

@@ -2354,6 +2354,11 @@ nlohmann::json AgentService::handle_request(const std::string& session_id, const
 
     // v0.14: 将助手回复写入对话短期记忆（Phase 1 上下文连贯性）
     std::string reply_text = chat_result.value("text", "");
+    if (reply_text.find_first_not_of(" \t\r\n") == std::string::npos &&
+        chat_result.value("type", "") == "chat_result") {
+      reply_text = "我识别了这个问题，但没有生成具体内容。可以换个说法，或输入「帮助」看我能做的事。";
+      chat_result["text"] = reply_text;
+    }
     if (!reply_text.empty()) {
       std::lock_guard<std::mutex> lk(mu_);
       auto& mem = session_chat_memory_[session_id];

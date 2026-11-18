@@ -40,6 +40,8 @@ std::string policy_style_default(const std::string& fallback = "normal");
 std::string policy_style_text(const std::string& style, const std::string& key, const std::string& fallback = "");
 std::string apply_style_prefix(const std::string& scope, const std::string& key, const std::string& body, const std::string& fallback_style = "normal");
 bool is_skills_only_query(const std::string& text);
+bool is_offline_help_query(const std::string& text);
+std::string offline_help_text();
 std::string build_profile_body(const std::string& lang, const agent::AgentRoleManager* role_mgr, const SkillRegistry& skill_registry, bool detailed = false, bool skills_only = false);
 std::string replace_all_copy(std::string s, const std::string& from, const std::string& to);
 std::string render_template(std::string tpl, const std::vector<std::pair<std::string, std::string>>& kv);
