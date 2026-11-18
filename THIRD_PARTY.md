@@ -10,11 +10,11 @@
 
 | # | 依赖 / 资源 | 路径（相对仓根） | 体积 | 入库 | 何时需要 | 恢复方式 |
 |---|---|---|---|---|---|---|
-| 1 | **llama.cpp 源码树** | `backends/thin_agent/third_party/llama.cpp/` | 220M | ❌ | 仅当 `-DTHIN_AGENT_WITH_LLAMA_CPP=ON`（**默认 OFF**）需要本地 GGUF 推理 | §2.1（clone 上游 + 固定 commit） |
+| 1 | **llama.cpp 源码树 / Windows 预编译** | `third_party/llama.cpp/` 或 `C:\deps-thin-agent\llama.cpp\` | 220M+ | ❌ | `-DTHIN_AGENT_WITH_LLAMA_CPP=ON` 进程内 GGUF | §2.1 |
 | 2 | **ONNX Runtime 预编译库（x86_64）** | `backends/thin_agent/third_party/onnxruntime/lib/` | 15M | ❌（**头文件已入库**） | 链接 `thin_agent`（ONNX 意图推理） | §2.2（官方 release，手动放置） |
 | 3 | **ONNX Runtime（aarch64）** | `backends/thin_agent/third_party/onnxruntime-aarch64/` | 25M | ❌ | `bash build.sh cam`（设备/ARM 版） | §2.3（**build.sh 自动下载**） |
 | 4 | **意图分类模型** | `backends/thin_agent/models/intent/onnx/model.onnx` | 91,011,230 B | ❌ | ONNX 意图推理（本地级联第 2 级，~50ms） | §2.4（**本仓脚本可再生成**） |
-| 5 | **GGUF 本地模型 ×3** | `backends/thin_agent/models/gguf/` | 1.6G | ❌ | 本地/离线推理（Qwen 第 1 级、Gemma 第 2 级） | §2.5（HuggingFace 上游 + 校验） |
+| 5 | **GGUF 本地模型** | `backends/thin_agent/models/gguf/` | ~2.3G（Aurum+Qwen） | ❌ | 进程内离线 / 外挂 llama-server | §2.5（GitHub release + 校验） |
 | 6 | **aarch64 离线打包产物** | `backends/thin_agent/dist/aarch64/` | 36M | ❌ | 设备侧离线部署 | §2.6（`deploy.sh --dist` 重建） |
 | 7 | **知识库索引** | `backends/knowledge_base/{kb.db,.search.db}` | 221K | ❌ | KB 全文检索 | §2.7（`scripts/reindex.py` 重建） |
 | 8 | **凭据** | `backends/knowledge_base/access_tokens.yaml`、`$THIN_AGENT_HOME/deepseek.env` | 小 | ❌（安全） | 运行时 | §3（单独投放 `chmod 600`） |
@@ -25,29 +25,44 @@
 
 ## 2. 逐项恢复步骤
 
-### 2.1 llama.cpp（220M，可选）
+### 2.1 llama.cpp（可选）
 
-本仓的 `third_party/llama.cpp/` 是**上游 llama.cpp 的检出**，固定 commit：
+#### Linux / 源码静态库
+
+本仓的 `third_party/llama.cpp/` 可为**上游检出**（历史固定 commit，供静态 `.a` 链接）：
 
 ```
 上游   https://github.com/ggerganov/llama.cpp.git
 commit 4f37f519722aa3242eecb7649466b4a4a2d6d6da   ("server: accept null sampling params (#25538)", 2026-07-10)
 ```
 
-恢复：
-
 ```bash
 cd backends/thin_agent
 git clone https://github.com/ggerganov/llama.cpp.git third_party/llama.cpp
 git -C third_party/llama.cpp checkout 4f37f519722aa3242eecb7649466b4a4a2d6d6da
-# 然后：cmake -B <build> -DTHIN_AGENT_WITH_LLAMA_CPP=ON
+cmake -B <build> -DTHIN_AGENT_WITH_LLAMA_CPP=ON
+# 或：-DLLAMA_CPP_DIR=/path/to/llama.cpp
 ```
 
-替代方案：**不自带源码**，改用外部构建好的 llama.cpp：
+#### Windows 预编译 DLL（本机推荐）
 
-```bash
-cmake -B <build> -DTHIN_AGENT_WITH_LLAMA_CPP=ON -DLLAMA_CPP_DIR=/path/to/llama.cpp
+约定路径（不入库）：
+
+| 路径 | 内容 |
+|---|---|
+| `C:\deps-thin-agent\llama.cpp\bin\` | `llama.dll`、`ggml*.dll`、`llama-server.exe`、`libomp.dll` 等 |
+| `C:\deps-thin-agent\llama.cpp\lib\` | 导入库 `llama.lib` / `ggml.lib`（可由 DLL 生成） |
+| `C:\deps-thin-agent\llama.cpp-src\` | 与 DLL **同 commit** 的头文件树（`include/llama.h`、`ggml/include`） |
+
+本机已验证的发行版：`llama-server --version` → build **12503**，commit **`4577932fab595eaa8b27ad71734d5de1f3c07d8c`**（Vulkan Windows 包）。头文件：
+
+```powershell
+git clone --filter=blob:none https://github.com/ggml-org/llama.cpp.git C:\deps-thin-agent\llama.cpp-src
+git -C C:\deps-thin-agent\llama.cpp-src fetch --depth 1 origin 4577932fab595eaa8b27ad71734d5de1f3c07d8c
+git -C C:\deps-thin-agent\llama.cpp-src checkout 4577932fab595eaa8b27ad71734d5de1f3c07d8c
 ```
+
+无 `.lib` 时在「x64 Native Tools」里对 `bin\llama.dll` / `ggml.dll`：`dumpbin /exports` → 写 `.def` → `lib /def:... /machine:x64`。CMake 默认会找上述路径；详见 `script/windows/README.md`。
 
 > 该目录整体被 `backends/thin_agent/.gitignore`（与顶层 `.gitignore`）忽略；**默认 OFF**，不 clone 不影响其余全部功能与测试。
 
@@ -109,17 +124,38 @@ python3 scripts/intent/eval_golden.py              # 黄金集评测（通过即
 > 重新训练/导出会得到**不同**的 hash（属预期）——此时以 `eval_golden.py` 通过为准。
 > **兜底已入库**：`models/intent/intent_multiclass.onnx`、`intent_stub.onnx`、`labels.json`、`tokenizer.json` 等小文件都在仓内 ⇒ 没有训练环境时，代码会自动退化到这些小模型（`resolve_intent_model_path()` 的候选顺序）。
 
-### 2.5 GGUF 本地模型（1.6G）
+### 2.5 GGUF 本地模型
 
-放置到 `backends/thin_agent/models/gguf/`。用途（本地级联，见 CHANGELOG）：Template(0ms) → ONNX intent(~50ms) → **Qwen 0.5B(~300ms)** → **Gemma 1B(~800ms)**；云模式不需要它们。
+放置到 `backends/thin_agent/models/gguf/`（`.gitignore` 忽略）。用途：
 
-| 文件 | 字节数 | sha256 | 上游（**按文件名与 CHANGELOG 记载推断，请以校验值为准**） |
+- **Windows 推荐**：进程内 `GgufModel`（`offline_demo` + `THIN_AGENT_WITH_LLAMA_CPP=ON`）懒加载 **Aurum → Qwen**；或外挂 `llama-server` + `lmstudio_demo`。
+- **历史 Linux 级联**：Template → ONNX intent → Qwen → Gemma（见 CHANGELOG）；云模式不需要 GGUF。
+
+#### 已核验下载（Windows 本机，2026-11-18）
+
+```powershell
+$dir = "backends/thin_agent/models/gguf"
+New-Item -ItemType Directory -Force -Path $dir | Out-Null
+curl.exe --ssl-no-revoke -L --fail -o "$dir/aurum-brain-q4_k_m.gguf" `
+  "https://github.com/aurum-lab/aurum-brain-ai/releases/download/daily-2026.11.18-07/aurum-brain-q4_k_m.gguf"
+curl.exe --ssl-no-revoke -L --fail -o "$dir/qwen2.5-0.5b-instruct-q2_k.gguf" `
+  "https://github.com/ozuakutku/qwen2.5-0.5b-gguf/releases/download/v1.0.0/qwen2.5-0.5b.gguf"
+```
+
+| 本地文件 | 字节数 | sha256 | 上游 |
 |---|---|---|---|
-| `qwen2.5-0.5b-instruct-q2_k.gguf` | 415,182,688 | `9ee36184e616dfc76df4f5dd66f908dbde6979524ae36e6cefb67f532f798cb8` | Qwen2.5-0.5B-Instruct 的 GGUF 量化（q2_k） |
-| `qwen2.5-0.5b-instruct-q4_k_m.gguf` | 491,400,032 | `74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db` | 同上（q4_k_m） |
-| `gemma-3-1b-it-q4_k_m.gguf` | 806,058,272 | `e4304281685198621755dac1851c040ff86b071e997cc214bfb9e8aca7f8dec2` | Gemma 3 1B IT 的 GGUF 量化（q4_k_m） |
+| `aurum-brain-q4_k_m.gguf` | 1,929,902,400 | `ef68a4d9c31f9b5c1186979416aa5856557fa9821917d3fda8d5f36c8624786d` | [aurum-lab/aurum-brain-ai `daily-2026.11.18-07`](https://github.com/aurum-lab/aurum-brain-ai/releases/download/daily-2026.11.18-07/aurum-brain-q4_k_m.gguf) |
+| `qwen2.5-0.5b-instruct-q2_k.gguf` | 397,807,936 | `c5396e06af294bd101b30dce59131a76d2b773e76950acc870eda801d3ab0515` | [ozuakutku/qwen2.5-0.5b-gguf `v1.0.0` 的 `qwen2.5-0.5b.gguf`](https://github.com/ozuakutku/qwen2.5-0.5b-gguf/releases/download/v1.0.0/qwen2.5-0.5b.gguf)（保存时改名） |
 
-> ⚠ **如实说明**：这三个权重的**确切下载地址未在仓内登记**（CHANGELOG 只记载了集成动作与体积）。上面「上游」一列是按文件名推断的候选；**恢复时请以「字节数 + sha256」为准**，不要仅凭文件名相信来源。
+> Aurum release 标签可能按日滚动；若链接 404，到同一仓库 Releases 页取最新 `*_q4_k_m.gguf`，并以新文件的 sha256 更新本表。
+
+#### 历史登记（Linux/CHANGELOG，地址曾未入库）
+
+| 文件 | 字节数 | sha256 | 说明 |
+|---|---|---|---|
+| `qwen2.5-0.5b-instruct-q2_k.gguf` | 415,182,688 | `9ee36184e616dfc76df4f5dd66f908dbde6979524ae36e6cefb67f532f798cb8` | 与上表 Windows 件**不是同一文件** |
+| `qwen2.5-0.5b-instruct-q4_k_m.gguf` | 491,400,032 | `74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db` | 可选更高质量量化；**确切 URL 仍未登记** |
+| `gemma-3-1b-it-q4_k_m.gguf` | 806,058,272 | `e4304281685198621755dac1851c040ff86b071e997cc214bfb9e8aca7f8dec2` | 代码仍可注册；文件缺失则跳过；**确切 URL 仍未登记** |
 
 ### 2.6 aarch64 离线打包产物（36M）
 
@@ -162,6 +198,12 @@ sha256sum models/gguf/*.gguf models/intent/onnx/model.onnx \
   third_party/onnxruntime/lib/libonnxruntime.so.1.18.1 \
   | grep -v '^$'
 # 与本文表格逐行比对（字节数用 stat -c%s 再核一遍）
+```
+
+Windows：
+
+```powershell
+Get-FileHash backends\thin_agent\models\gguf\*.gguf -Algorithm SHA256
 ```
 
 ## 5. 注意事项

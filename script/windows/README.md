@@ -57,16 +57,62 @@ powershell -NoProfile -ExecutionPolicy Bypass -File script\windows\start-windows
 | `-NoGui` | 关 | 只启动后端，不打开 `zing_agent`。 |
 | `-Stop` | 关 | 结束本仓库编出来的 `thin_agent.exe` 和 `zing_agent.exe`。 |
 
-云端 profile（例如 `deepseek_fast_demo`）需要对应的 API key 环境变量。密钥放在配置或环境里，不要写进这个脚本。
+云端 profile（例如 `deepseek_fast_demo`）需要对应的 API key 环境变量。密钥放在配置或环境里，不要写进这个脚本。更完整的密钥/第三方清单见仓库根目录 [`THIRD_PARTY.md`](../../THIRD_PARTY.md)。
 
-## 进程内 GGUF（可选）
+## 本地对话：三选一
 
-Windows 可把 `THIN_AGENT_WITH_LLAMA_CPP=ON` 编进 `thin_agent`，用 `GgufModel` 直接加载 `models/gguf/*.gguf`，不必外挂 `llama-server`（`lmstudio_demo` 通道仍可走外挂）。
+| 方式 | 何时用 | 要不要 `llama-server` | 配置 / 通道 |
+| --- | --- | --- | --- |
+| **A. 进程内 GGUF** | 推荐本机离线聊天 | **不需要** | 启动 `offline_demo`；`THIN_AGENT_WITH_LLAMA_CPP=ON` 编过；GGUF 放在 `models/gguf/` |
+| **B. 外挂 OpenAI 兼容端点** | 对齐 LM Studio / 单独调试 server | **需要** | 侧栏切 `lmstudio_demo`（`http://127.0.0.1:1234/v1`） |
+| **C. 云端 API** | 智谱 / DeepSeek 等 | 不需要本地权重 | 侧栏切对应 profile，并设置 `api_key_env` 环境变量 |
 
-依赖（本机已有时可直接编）：
+侧栏「模型通道」热切换只改进程内路由，**不**迁移会话/记忆目录（数据目录仍跟启动时的 `-AgentProfile`）。协议：`list_profiles` / `switch_profile`。
+
+| 展示名（约） | profile | 说明 |
+| --- | --- | --- |
+| 离线规则 / 进程内 GGUF | `offline_demo` | 默认；有 GGUF 且 ON 编译时走 HybridRouter→Aurum |
+| 本地 Aurum（lmstudio） | `lmstudio_demo` | 外挂 `127.0.0.1:1234`；端点不通时 UI 会提示 |
+| 智谱 / DeepSeek 等 | `zai_*` / `deepseek_*` | 需 `GLM_API_KEY`、`DEEPSEEK_API_KEY` 等 |
+
+profile 定义在 `backends\thin_agent\config\demo.model.yaml`（或 `%USERPROFILE%\.thin_agent\demo.model.yaml`）。
+
+## 下载 GGUF 模型
+
+大文件不进 git。放到：
+
+`backends\thin_agent\models\gguf\`
+
+Windows 当前验证过的权重（下载后请用 sha256 核对，详见 `THIRD_PARTY.md` §2.5）：
+
+```powershell
+$dir = "backends\thin_agent\models\gguf"
+New-Item -ItemType Directory -Force -Path $dir | Out-Null
+
+# 主用：Aurum ~3B Q4_K_M（进程内离线优先加载）
+curl.exe --ssl-no-revoke -L --fail -o "$dir\aurum-brain-q4_k_m.gguf" `
+  "https://github.com/aurum-lab/aurum-brain-ai/releases/download/daily-2026.11.18-07/aurum-brain-q4_k_m.gguf"
+
+# 备用：Qwen2.5-0.5B（翻译/级联回落；上游 release 文件名不同，本地按此名保存）
+curl.exe --ssl-no-revoke -L --fail -o "$dir\qwen2.5-0.5b-instruct-q2_k.gguf" `
+  "https://github.com/ozuakutku/qwen2.5-0.5b-gguf/releases/download/v1.0.0/qwen2.5-0.5b.gguf"
+
+Get-FileHash "$dir\aurum-brain-q4_k_m.gguf","$dir\qwen2.5-0.5b-instruct-q2_k.gguf" -Algorithm SHA256
+```
+
+| 本地文件名 | 约体积 | sha256（本机已核） |
+| --- | --- | --- |
+| `aurum-brain-q4_k_m.gguf` | 1.93 GB | `EF68A4D9C31F9B5C1186979416AA5856557FA9821917D3FDA8D5F36C8624786D` |
+| `qwen2.5-0.5b-instruct-q2_k.gguf` | 379 MB | `C5396E06AF294BD101B30DCE59131A76D2B773E76950ACC870EDA801D3AB0515` |
+
+## 进程内 GGUF（方式 A）
+
+把 `THIN_AGENT_WITH_LLAMA_CPP=ON` 编进 `thin_agent` 后，`GgufModel` 直接加载上面的 GGUF，**不必**外挂 `llama-server`。
+
+依赖（本机约定路径）：
 
 - 预编译 DLL：`C:\deps-thin-agent\llama.cpp\`（`bin\*.dll` + `lib\llama.lib` / `ggml.lib`）
-- 匹配版本头文件：`C:\deps-thin-agent\llama.cpp-src\`（commit 与 DLL 一致）
+- 匹配版本头文件：`C:\deps-thin-agent\llama.cpp-src\`（commit 与 DLL 一致，例如 build 12503 / `4577932fa`）
 
 ```powershell
 $cmake = "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
@@ -74,25 +120,11 @@ $cmake = "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\Comm
 & $cmake --build backends\thin_agent\build-win --config Release --target thin_agent
 ```
 
-离线 profile 下 HybridRouter 会懒加载已注册的 GGUF（优先 Aurum，其次 Qwen0.5B）。导入库若缺失，可在 VS 开发者命令行对 `bin\llama.dll` / `ggml.dll` 用 `dumpbin /exports` + `lib /def` 生成到 `lib\`。
+离线 profile 下 HybridRouter 懒加载（优先 Aurum，其次 Qwen0.5B）。导入库若缺失，在 VS 开发者命令行对 `bin\llama.dll` / `ggml.dll` 用 `dumpbin /exports` + `lib /def` 生成到 `lib\`。
 
-## 模型通道热切换
+## 外挂 llama-server（方式 B）
 
-启动后不必重启 `thin_agent` 也能换路由：`zing_agent` 侧栏「模型通道」下拉会发 `list_profiles` / `switch_profile`。只热替换进程内模型配置，**不**迁移会话/记忆目录（数据目录仍跟启动时的 `-AgentProfile`）。
-
-常见选项：
-
-| 展示名（约） | profile | 说明 |
-| --- | --- | --- |
-| 离线规则 | `offline_demo` | 无外网也能答，默认启动档 |
-| 本地 Aurum（lmstudio） | `lmstudio_demo` | 走本机 OpenAI 兼容端点 `http://127.0.0.1:1234/v1` |
-| 智谱 / DeepSeek 等 | `zai_*` / `deepseek_*` | 需对应 `api_key_env`（如 `GLM_API_KEY`、`DEEPSEEK_API_KEY`） |
-
-切到本地通道时若端点不通，UI 会提示先启动 `llama-server`。
-
-### 本地 llama-server（Aurum）
-
-默认模型路径：`backends\thin_agent\models\gguf\aurum-brain-q4_k_m.gguf`（大文件通常不进 git）。二进制优先找 `C:\deps-thin-agent\llama.cpp\bin\llama-server.exe`。
+默认模型路径同上 `aurum-brain-q4_k_m.gguf`。二进制优先找 `C:\deps-thin-agent\llama.cpp\bin\llama-server.exe`。
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File script\windows\start-llama-server.ps1
@@ -100,7 +132,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File script\windows\start-llama-s
 
 常用参数：`-Model <gguf路径>`、`-Port 1234`、`-GpuLayers 99`、`-LlamaServer <exe>`、`-Stop`。
 
-手动等价命令示例：
+手动等价：
 
 ```powershell
 & C:\deps-thin-agent\llama.cpp\bin\llama-server.exe `
@@ -108,7 +140,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File script\windows\start-llama-s
   --host 127.0.0.1 --port 1234 -c 4096 -ngl 99
 ```
 
-就绪后在侧栏选「本地 Aurum」即可；健康检查：`http://127.0.0.1:1234/v1/models`。
+就绪后侧栏选「本地 Aurum（lmstudio）」；健康检查：`http://127.0.0.1:1234/v1/models`。
+
+## 云端 Key（方式 C）
+
+在系统或当前 shell 设置环境变量（名称以 `demo.model.yaml` 里 `api_key_env` 为准），例如：
+
+```powershell
+$env:GLM_API_KEY = "..."
+$env:DEEPSEEK_API_KEY = "..."
+```
+
+不要把真实 Key 写进仓库或本脚本。缺 Key 时仍可热切换到该通道，但调用可能失败（UI/WS 会带 warning）。
 
 ## 停止
 

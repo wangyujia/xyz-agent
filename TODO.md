@@ -65,8 +65,8 @@ powershell.exe -NoProfile -Command 'git -C "E:\code\xyz-agent" push origin maste
 
 ### T4. GGUF 权重上游来源登记
 
-**现状**：`THIRD_PARTY.md §2.5` 只有文件名/字节数/sha256，**确切下载地址未在仓内登记**（CHANGELOG 只记了集成动作与体积），文档已如实标注"以校验值为准"。
-**要做**：补上三个权重的上游（HF 仓库 + 量化标识 + 获取命令）。
+**现状（部分完成）**：`THIRD_PARTY.md §2.5` 与 `script/windows/README.md` 已登记 **Aurum**、**Qwen2.5-0.5B**（GitHub release URL + 字节数 + sha256）。**Gemma 3 1B** 与历史 q4 件仍只有校验值、无确切 URL。
+**要做**：补 Gemma（及若仍需要的 q4 Qwen）上游与获取命令；Aurum 日更 release 失效时更新链接与 hash。
 **验收**：按文档下载得到**字节数与 sha256 完全一致**的文件。
 
 ### T5. 前端文档与本仓结构对齐
