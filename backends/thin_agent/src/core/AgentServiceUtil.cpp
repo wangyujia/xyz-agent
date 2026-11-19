@@ -2128,32 +2128,112 @@ std::string extract_json_object_ish(const std::string& raw) {
 std::string tools_schema_to_local_prompt(const nlohmann::json& tools) {
   if (!tools.is_array() || tools.empty()) return {};
   std::ostringstream os;
-  os << "\n\n## Local tool use protocol\n"
-     << "You can call tools. When you need a tool, reply with ONLY JSON:\n"
-     << "{\"tool_calls\":[{\"name\":\"<tool>\",\"params\":{...}}]}\n"
-     << "When finished, reply with normal assistant text OR:\n"
-     << "{\"tool_calls\":[],\"final_answer\":\"<reply>\"}\n"
-     << "Available tools:\n";
+  // Qwen / Hermes 风格：与常见 chat template tools 段对齐（非 OpenAI HTTP tools 字段）
+  os << "\n\n# Tools\n\n"
+     << "You may call one or more tools to help solve the user request.\n"
+     << "Function signatures are listed inside <tools></tools>:\n"
+     << "<tools>\n";
   for (const auto& t : tools) {
     if (!t.is_object()) continue;
     const auto& fn = t.contains("function") ? t["function"] : t;
     if (!fn.is_object()) continue;
     const std::string name = fn.value("name", "");
     if (name.empty()) continue;
-    os << "- " << name;
+    nlohmann::json sig = nlohmann::json::object();
+    sig["name"] = name;
     if (fn.contains("description") && fn["description"].is_string()) {
-      os << ": " << utf8_truncate(fn["description"].get<std::string>(), 160);
+      sig["description"] = utf8_truncate(fn["description"].get<std::string>(), 240);
     }
-    os << "\n";
+    if (fn.contains("parameters")) sig["parameters"] = fn["parameters"];
+    else if (fn.contains("input_schema")) sig["parameters"] = fn["input_schema"];
+    os << sig.dump() << "\n";
   }
+  os << "</tools>\n\n"
+     << "When you need a tool, emit one or more <tool_call> blocks "
+        "(and little else):\n"
+     << "<tool_call>\n"
+     << "{\"name\": \"<tool>\", \"arguments\": {...}}\n"
+     << "</tool_call>\n"
+     << "When finished, reply with normal assistant text (no tool_call).\n"
+     << "Legacy JSON is also accepted: "
+        "{\"tool_calls\":[{\"name\":\"<tool>\",\"params\":{...}}]}\n";
   return os.str();
 }
 
-/// 从本地模型自由文本中解析 tool_calls（兼容 OpenAI 包一层 / 裸 JSON）。
+/// 解析 Qwen/Hermes `<tool_call>...</tool_call>`（可多段）。
+std::vector<CloudLlmClient::ParsedToolCall> parse_xml_tool_calls(
+    const std::string& raw) {
+  std::vector<CloudLlmClient::ParsedToolCall> out;
+  const std::string open = "<tool_call>";
+  const std::string close = "</tool_call>";
+  size_t pos = 0;
+  int idx = 0;
+  while (pos < raw.size()) {
+    auto a = raw.find(open, pos);
+    if (a == std::string::npos) break;
+    a += open.size();
+    auto b = raw.find(close, a);
+    if (b == std::string::npos) break;
+    std::string body = raw.substr(a, b - a);
+    // 去掉首尾空白
+    while (!body.empty() && (body.front() == ' ' || body.front() == '\n' ||
+                             body.front() == '\r' || body.front() == '\t'))
+      body.erase(body.begin());
+    while (!body.empty() && (body.back() == ' ' || body.back() == '\n' ||
+                             body.back() == '\r' || body.back() == '\t'))
+      body.pop_back();
+    nlohmann::json j;
+    try {
+      j = nlohmann::json::parse(body);
+    } catch (...) {
+      // 容错：截一段最外层 {}
+      auto js = extract_json_object_ish(body);
+      try { j = nlohmann::json::parse(js); } catch (...) {
+        pos = b + close.size();
+        continue;
+      }
+    }
+    CloudLlmClient::ParsedToolCall ptc;
+    ptc.id = "local_xml_" + std::to_string(idx++);
+    if (j.contains("function") && j["function"].is_object()) {
+      ptc.name = j["function"].value("name", "");
+      const auto& args = j["function"].value("arguments", nlohmann::json::object());
+      if (args.is_string()) {
+        try { ptc.arguments = nlohmann::json::parse(args.get<std::string>()); }
+        catch (...) { ptc.arguments = nlohmann::json::object(); }
+      } else if (args.is_object()) {
+        ptc.arguments = args;
+      }
+    } else {
+      ptc.name = j.value("name", "");
+      if (j.contains("arguments")) {
+        if (j["arguments"].is_string()) {
+          try { ptc.arguments = nlohmann::json::parse(j["arguments"].get<std::string>()); }
+          catch (...) { ptc.arguments = nlohmann::json::object(); }
+        } else if (j["arguments"].is_object()) {
+          ptc.arguments = j["arguments"];
+        }
+      } else if (j.contains("params") && j["params"].is_object()) {
+        ptc.arguments = j["params"];
+      } else {
+        ptc.arguments = nlohmann::json::object();
+      }
+    }
+    if (!ptc.name.empty()) out.push_back(std::move(ptc));
+    pos = b + close.size();
+  }
+  return out;
+}
+
+/// 从本地模型自由文本中解析 tool_calls（Qwen XML / OpenAI / 裸 JSON）。
 std::vector<CloudLlmClient::ParsedToolCall> parse_local_tool_calls(
     const std::string& raw, std::string* final_answer_out) {
   std::vector<CloudLlmClient::ParsedToolCall> out;
   if (final_answer_out) final_answer_out->clear();
+
+  // 0) Qwen / Hermes 原生 <tool_call>
+  out = parse_xml_tool_calls(raw);
+  if (!out.empty()) return out;
 
   // 1) 若整段是 OpenAI chat.completion JSON
   auto native = CloudLlmClient::parse_tool_calls(raw);
@@ -2230,13 +2310,18 @@ CloudChatResult run_local_tool_loop(
 
   const std::string tools_prompt = tools_schema_to_local_prompt(tools_schema);
   if (!tools_prompt.empty()) {
+    // HITL 续跑快照里可能已含 tools 段，避免重复追加撑爆上下文
+    auto already_has_tools = [](const std::string& s) {
+      return s.find("<tools>") != std::string::npos ||
+             s.find("## Local tool use protocol") != std::string::npos ||
+             s.find("# Tools\n") != std::string::npos;
+    };
     bool injected = false;
     for (auto& m : messages) {
-      if (m.role == "system") {
-        m.content += tools_prompt;
-        injected = true;
-        break;
-      }
+      if (m.role != "system") continue;
+      if (!already_has_tools(m.content)) m.content += tools_prompt;
+      injected = true;
+      break;
     }
     if (!injected) {
       messages.insert(messages.begin(), ChatMessage{"system", tools_prompt});
@@ -2336,11 +2421,11 @@ CloudChatResult run_local_tool_loop(
       tool_msg.content = tr.output;
       messages.push_back(std::move(tool_msg));
 
-      // 本地 chat template 对 tool role 支持不一：再塞一条 user 观察，稳妥
+      // 本地 chat template 对 tool role 支持不一：再塞一条 user 观察（Qwen tool_response）
       ChatMessage obs;
       obs.role = "user";
-      obs.content = std::string("[tool_result ") + tc.name + "]\n" +
-                    utf8_truncate(tr.output, 4000);
+      obs.content = std::string("<tool_response>\n") +
+                    utf8_truncate(tr.output, 4000) + "\n</tool_response>";
       messages.push_back(std::move(obs));
     }
   }

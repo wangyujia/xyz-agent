@@ -193,6 +193,7 @@ add_library(thin_agent_core
   src/local/ModelPool.cpp
   src/local/TemplateModel.cpp
   src/local/GgufModel.cpp
+  src/local/MtmdDyn.cpp
   src/local/OnnxChatModel.cpp
   src/local/HybridRouter.cpp
 )
@@ -1692,12 +1693,13 @@ if(THIN_AGENT_WITH_LLAMA_CPP)
 
     target_include_directories(thin_agent_core PUBLIC
       "${LLAMA_CPP_SRC}/include"
-      "${LLAMA_CPP_SRC}/ggml/include")
+      "${LLAMA_CPP_SRC}/ggml/include"
+      "${LLAMA_CPP_SRC}/tools/mtmd")
     target_link_libraries(thin_agent_core PUBLIC llama_vendor ggml_vendor)
     target_compile_definitions(thin_agent_core PUBLIC
       THIN_AGENT_WITH_LLAMA_CPP LLAMA_SHARED GGML_SHARED)
 
-    # 运行时后端 DLL（Vulkan/CPU）需与 exe 同目录或 ggml 能搜到
+    # 运行时后端 DLL（Vulkan/CPU）+ mtmd（多模态，动态 LoadLibrary）需与 exe 同目录
     if(TARGET thin_agent)
       file(GLOB _llama_runtime_dlls
         "${LLAMA_CPP_DIR}/bin/llama.dll"
@@ -1705,12 +1707,14 @@ if(THIN_AGENT_WITH_LLAMA_CPP)
         "${LLAMA_CPP_DIR}/bin/ggml-base.dll"
         "${LLAMA_CPP_DIR}/bin/ggml-vulkan.dll"
         "${LLAMA_CPP_DIR}/bin/ggml-cpu-*.dll"
-        "${LLAMA_CPP_DIR}/bin/libomp.dll")
+        "${LLAMA_CPP_DIR}/bin/libomp.dll"
+        "${LLAMA_CPP_DIR}/bin/mtmd.dll"
+        "${LLAMA_CPP_DIR}/bin/llama-common.dll")
       foreach(_dll IN LISTS _llama_runtime_dlls)
         add_custom_command(TARGET thin_agent POST_BUILD
           COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${_dll}" "$<TARGET_FILE_DIR:thin_agent>"
-          COMMENT "Copy llama/ggml runtime DLL next to thin_agent.exe")
+          COMMENT "Copy llama/ggml/mtmd runtime DLL next to thin_agent.exe")
       endforeach()
     endif()
     message(STATUS "llama.cpp (Windows DLL): ${LLAMA_CPP_DIR} headers=${LLAMA_CPP_SRC}")
@@ -1732,7 +1736,8 @@ if(THIN_AGENT_WITH_LLAMA_CPP)
     target_include_directories(thin_agent_core PUBLIC
       "${LLAMA_CPP_SRC}/include"
       "${LLAMA_CPP_SRC}/ggml/include"
-      "${LLAMA_CPP_DIR}/build/ggml/include")
+      "${LLAMA_CPP_DIR}/build/ggml/include"
+      "${LLAMA_CPP_SRC}/tools/mtmd")
     target_link_libraries(thin_agent_core PUBLIC
       llama_vendor ggml_vendor ggml_base_vendor ggml_cpu_vendor)
     target_compile_definitions(thin_agent_core PUBLIC THIN_AGENT_WITH_LLAMA_CPP)

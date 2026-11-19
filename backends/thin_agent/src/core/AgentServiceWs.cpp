@@ -628,15 +628,16 @@ nlohmann::json AgentService::handle_chat_approve(const std::string& session_id,
               if (m.role != "system" && m.role != "user" &&
                   m.role != "assistant" && m.role != "tool")
                 continue;
-              std::string content = m.content;
+              thin_agent::local::GgufModel::ChatTurn t;
               if (m.role == "tool") {
-                turns.emplace_back(
-                    "user",
-                    std::string("[tool_result ") +
-                        (m.name.empty() ? "tool" : m.name) + "]\n" + content);
+                t.role = "user";
+                t.content = std::string("<tool_response>\n") + m.content +
+                            "\n</tool_response>";
               } else {
-                turns.emplace_back(m.role, std::move(content));
+                t.role = m.role;
+                t.content = m.content;
               }
+              turns.push_back(std::move(t));
             }
             return gguf_ptr->infer_turns(turns, mt);
           };

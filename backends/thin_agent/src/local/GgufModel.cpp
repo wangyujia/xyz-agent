@@ -27,7 +27,7 @@ namespace {
 constexpr const char* kDefaultQwenSystem =
     "You are Qwen, created by Alibaba Cloud. You are a helpful assistant.";
 
-using ChatTurn = std::pair<std::string, std::string>;
+using ChatTurn = GgufModel::ChatTurn;
 
 std::string format_chat_prompt(llama_model* model,
                                const std::vector<ChatTurn>& turns_in) {
@@ -36,16 +36,16 @@ std::string format_chat_prompt(llama_model* model,
   std::vector<ChatTurn> turns = turns_in;
   bool has_system = false;
   for (const auto& t : turns) {
-    if (t.first == "system") { has_system = true; break; }
+    if (t.role == "system") { has_system = true; break; }
   }
   if (!has_system) {
-    turns.insert(turns.begin(), ChatTurn{"system", kDefaultQwenSystem});
+    turns.insert(turns.begin(), ChatTurn{"system", kDefaultQwenSystem, {}});
   }
 
   std::vector<llama_chat_message> msgs;
   msgs.reserve(turns.size());
   for (const auto& t : turns) {
-    msgs.push_back(llama_chat_message{t.first.c_str(), t.second.c_str()});
+    msgs.push_back(llama_chat_message{t.role.c_str(), t.content.c_str()});
   }
 
   const char* tmpl = llama_model_chat_template(model, /*name=*/nullptr);
@@ -75,18 +75,18 @@ std::string format_chatml_manual(const std::vector<ChatTurn>& turns_in) {
   std::vector<ChatTurn> turns = turns_in;
   bool has_system = false;
   for (const auto& t : turns) {
-    if (t.first == "system") { has_system = true; break; }
+    if (t.role == "system") { has_system = true; break; }
   }
   if (!has_system) {
-    turns.insert(turns.begin(), ChatTurn{"system", kDefaultQwenSystem});
+    turns.insert(turns.begin(), ChatTurn{"system", kDefaultQwenSystem, {}});
   }
   std::string out;
   out.reserve(512);
   for (const auto& t : turns) {
     out += "<|im_start|>";
-    out += t.first;
+    out += t.role;
     out += "\n";
-    out += t.second;
+    out += t.content;
     out += "<|im_end|>\n";
   }
   out += "<|im_start|>assistant\n";
@@ -134,16 +134,85 @@ std::string take_complete_utf8(std::string& pending) {
   return out;
 }
 
+/// 收集带图 turn，并在对应 content 中插入 media marker（若尚未包含）。
+std::vector<ChatTurn> turns_with_media_markers(
+    const std::vector<ChatTurn>& turns_in, const char* marker,
+    std::vector<std::vector<uint8_t>>* images_out) {
+  std::vector<ChatTurn> turns = turns_in;
+  if (images_out) images_out->clear();
+  if (!marker || !*marker) return turns;
+  for (auto& t : turns) {
+    if (t.image_bytes.empty()) continue;
+    if (images_out) images_out->push_back(t.image_bytes);
+    if (t.content.find(marker) == std::string::npos) {
+      if (!t.content.empty() && t.content.back() != '\n') t.content.push_back('\n');
+      t.content += marker;
+    }
+  }
+  return turns;
+}
+
 bool prepare_prompt_tokens(llama_model* m, llama_context* c, const llama_vocab* v,
                            llama_sampler* smpl,
                            const std::vector<ChatTurn>& turns,
-                           std::vector<llama_token>* out_tokens) {
+                           std::vector<llama_token>* out_tokens,
+                           MtmdSession* mtmd) {
   if (!m || !c || !v || !out_tokens || turns.empty()) return false;
   clear_context(c);
   if (smpl) llama_sampler_reset(smpl);
 
-  std::string prompt = format_chat_prompt(m, turns);
-  if (prompt.empty()) prompt = format_chatml_manual(turns);
+  std::vector<std::vector<uint8_t>> images;
+  const char* marker =
+      (mtmd && mtmd->ready()) ? mtmd->media_marker() : nullptr;
+  std::vector<ChatTurn> turns_use =
+      turns_with_media_markers(turns, marker, &images);
+
+  // 无 vision 时丢掉 image_bytes，避免 marker 泄漏进纯文本路径
+  if (!(mtmd && mtmd->ready()) || images.empty()) {
+    for (auto& t : turns_use) {
+      if (!t.image_bytes.empty()) {
+        t.image_bytes.clear();
+        // 无 encoder：用文字占位保留「有图」意图
+        t.content +=
+            "\n[Attached image present; local vision encoder not loaded.]";
+      }
+    }
+    images.clear();
+  }
+
+  std::string prompt = format_chat_prompt(m, turns_use);
+  if (prompt.empty()) prompt = format_chatml_manual(turns_use);
+
+  if (mtmd && mtmd->ready() && !images.empty()) {
+    if (mtmd->eval_prompt(c, prompt, images)) {
+      // eval 已写入 KV；token 数未知时用粗估供 room 计算
+      out_tokens->assign(1, 0);
+      return true;
+    }
+    // mmproj/图像解码失败：退回纯文本，避免整轮空回复
+    // 必须去掉已插入的 media marker，否则纯文本路径会留下无意义占位符
+    const char* drop = marker;
+    for (auto& t : turns_use) {
+      if (t.image_bytes.empty() &&
+          !(drop && *drop && t.content.find(drop) != std::string::npos))
+        continue;
+      t.image_bytes.clear();
+      if (drop && *drop) {
+        for (;;) {
+          auto p = t.content.find(drop);
+          if (p == std::string::npos) break;
+          t.content.erase(p, std::strlen(drop));
+        }
+      }
+      t.content +=
+          "\n[Attached image present; local vision encode failed, "
+          "text-only fallback.]";
+    }
+    prompt = format_chat_prompt(m, turns_use);
+    if (prompt.empty()) prompt = format_chatml_manual(turns_use);
+    clear_context(c);
+    if (smpl) llama_sampler_reset(smpl);
+  }
 
   int n_tokens = -llama_tokenize(v, prompt.c_str(), static_cast<int>(prompt.size()),
                                  nullptr, 0, true, true);
@@ -190,6 +259,7 @@ GgufModel::GgufModel(const std::string& model_path,
 }
 
 GgufModel::~GgufModel() {
+  mtmd_.reset();
 #ifdef THIN_AGENT_WITH_LLAMA_CPP
   if (sampler_) llama_sampler_free(static_cast<llama_sampler*>(sampler_));
   if (ctx_) llama_free(static_cast<llama_context*>(ctx_));
@@ -198,6 +268,7 @@ GgufModel::~GgufModel() {
 }
 
 void GgufModel::unload() {
+  mtmd_.reset();
 #ifdef THIN_AGENT_WITH_LLAMA_CPP
   if (sampler_) { llama_sampler_free(static_cast<llama_sampler*>(sampler_)); sampler_ = nullptr; }
   if (ctx_) { llama_free(static_cast<llama_context*>(ctx_)); ctx_ = nullptr; }
@@ -280,6 +351,13 @@ bool GgufModel::load() {
 
   memory_bytes_ = static_cast<size_t>(llama_model_size(m)) + llama_state_get_size(c);
   loaded_ = true;
+
+  // 可选多模态：mtmd.dll + mmproj（失败不影响纯文本）
+  std::string mmproj = mmproj_path_override_;
+  if (mmproj.empty()) mmproj = resolve_mmproj_path(model_path_);
+  if (!mmproj.empty() && mtmd_runtime_available()) {
+    mtmd_.init(m, mmproj, n_threads_);
+  }
   return true;
 #endif
 }
@@ -294,6 +372,20 @@ nlohmann::json GgufModel::status() const {
   j["n_ctx_train"] = n_ctx_train_;
   j["n_ctx_requested"] = n_ctx_requested_;
   j["n_ctx_auto"] = n_ctx_requested_ <= 0;
+  j["mtmd_runtime"] = mtmd_runtime_available();
+  j["vision"] = mtmd_.ready();
+  if (!mtmd_.mmproj_path().empty()) {
+    j["mmproj"] = mtmd_.mmproj_path();
+  } else {
+    const std::string cand = resolve_mmproj_path(model_path_);
+    if (!cand.empty()) {
+      j["mmproj_candidate"] = cand;
+      j["vision_capable"] = mtmd_runtime_available();
+    } else {
+      j["vision_capable"] = false;
+    }
+  }
+  if (mtmd_.ready()) j["vision_capable"] = true;
   return j;
 }
 
@@ -312,13 +404,17 @@ std::string GgufModel::infer_turns(const std::vector<ChatTurn>& turns,
   auto* smpl = static_cast<llama_sampler*>(sampler_);
 
   std::vector<llama_token> prompt_tokens;
-  if (!prepare_prompt_tokens(m, c, v, smpl, turns, &prompt_tokens)) return "";
+  if (!prepare_prompt_tokens(m, c, v, smpl, turns, &prompt_tokens, &mtmd_))
+    return "";
 
   // max_tokens 只是循环上限，不另开内存；真正显存/内存在 load 时按 n_ctx 定
   // 生成不能超过「窗口 − 已用 prompt」，否则 decode 会失败/截断
+  // vision eval 后 token 计数不可靠：用窗口一半作保守 room
   const int prompt_n = static_cast<int>(prompt_tokens.size());
+  const bool vision_path = mtmd_.ready() && prompt_n <= 1;
   const int room = n_ctx_ > 0
-                       ? std::max(64, n_ctx_ - prompt_n - 4)
+                       ? (vision_path ? std::max(64, n_ctx_ / 2)
+                                      : std::max(64, n_ctx_ - prompt_n - 4))
                        : std::max(max_tokens, 64);
   const int limit = std::min(std::max(max_tokens, 64), room);
 
@@ -362,7 +458,7 @@ void GgufModel::infer_stream_turns(const std::vector<ChatTurn>& turns,
   auto* smpl = static_cast<llama_sampler*>(sampler_);
 
   std::vector<llama_token> prompt_tokens;
-  if (!prepare_prompt_tokens(m, c, v, smpl, turns, &prompt_tokens)) {
+  if (!prepare_prompt_tokens(m, c, v, smpl, turns, &prompt_tokens, &mtmd_)) {
     on_token("", true);
     return;
   }
@@ -370,8 +466,10 @@ void GgufModel::infer_stream_turns(const std::vector<ChatTurn>& turns,
   std::string pending;
   int generated = 0;
   const int prompt_n = static_cast<int>(prompt_tokens.size());
+  const bool vision_path = mtmd_.ready() && prompt_n <= 1;
   const int room = n_ctx_ > 0
-                       ? std::max(64, n_ctx_ - prompt_n - 4)
+                       ? (vision_path ? std::max(64, n_ctx_ / 2)
+                                      : std::max(64, n_ctx_ - prompt_n - 4))
                        : std::max(max_tokens, 64);
   const int limit = std::min(std::max(max_tokens, 64), room);
 
@@ -405,7 +503,7 @@ std::string GgufModel::infer(const std::string& input,
                               int max_tokens,
                               const std::string& /*capability*/) {
   if (input.empty()) return "";
-  return infer_turns({{"user", input}}, max_tokens);
+  return infer_turns({ChatTurn{"user", input, {}}}, max_tokens);
 }
 
 void GgufModel::infer_stream(const std::string& input,
@@ -414,7 +512,8 @@ void GgufModel::infer_stream(const std::string& input,
                               const std::string& /*capability*/) {
   if (!on_token) return;
   if (input.empty()) { on_token("", true); return; }
-  infer_stream_turns({{"user", input}}, std::move(on_token), max_tokens);
+  infer_stream_turns({ChatTurn{"user", input, {}}}, std::move(on_token),
+                     max_tokens);
 }
 
 }  // namespace local

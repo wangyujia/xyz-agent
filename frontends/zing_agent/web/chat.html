@@ -2135,13 +2135,22 @@ function fillLocalModelSelect(obj) {
   models.forEach(m => {
     const name = String(m.name || '');
     const base = String(m.label || name);
+    const visionOn = !!m.vision;
+    const visionCap = !!m.vision_capable || visionOn;
     let label = base;
+    if (visionOn) label += ' · 视觉';
+    else if (visionCap) label += ' · 可视觉';
     if (m.loaded) label += ' · 已加载';
     html += '<option value="' + esc(name) + '">' + esc(label) + '</option>';
     const active = name === current ? ' active' : '';
+    const subBits = [];
+    if (visionOn) subBits.push('视觉就绪');
+    else if (visionCap) subBits.push('可视觉');
+    if (m.loaded) subBits.push('已加载');
+    else subBits.push(name);
     menuHtml += '<div class="mm-item' + active + '" data-name="' + esc(name) + '" role="option">' +
-      '<span>' + esc(base) + '</span>' +
-      '<span class="mm-sub">' + (m.loaded ? '已加载' : name) + '</span></div>';
+      '<span>' + esc(base) + (visionCap ? ' 🖼' : '') + '</span>' +
+      '<span class="mm-sub">' + esc(subBits.join(' · ')) + '</span></div>';
   });
   if (sel) {
     sel.innerHTML = html;
@@ -2165,9 +2174,15 @@ function fillLocalModelSelect(obj) {
   }
   const chosen = (sel && sel.value) ? sel.value : current;
   const cur = models.find(m => String(m.name) === chosen) || models[0] || {};
-  const chipText = String(cur.label || cur.name || current || '本地模型');
+  let chipText = String(cur.label || cur.name || current || '本地模型');
+  if (cur.vision) chipText += ' · 视觉';
+  else if (cur.vision_capable) chipText += ' · 可视觉';
   setModelChipLabel(chipText, false);
-  if (meta) meta.textContent = chipText + (cur.loaded ? ' · 已加载' : '');
+  if (meta) {
+    let metaText = chipText + (cur.loaded ? ' · 已加载' : '');
+    if (obj.mtmd_runtime === false) metaText += ' · 无 mtmd.dll';
+    meta.textContent = metaText;
+  }
   const nCtx = Number(cur.n_ctx || cur.n_ctx_train || 0) || 0;
   if (nCtx > 0) ctxStats.n_ctx = nCtx;
   if (chipText) ctxStats.model = chipText;
@@ -2492,6 +2507,17 @@ function handleIncoming(obj) {
     pushMsg('tool', summary, { tool: name, detail: JSON.stringify(obj, null, 1) });
     return;
   }
+  if (t === 'local_vision') {
+    if (obj.ok) {
+      pushMsg('system', '🖼 本地视觉已启用' +
+        (obj.mmproj ? '（' + String(obj.mmproj).split(/[/\\\\]/).pop() + '）' : ''));
+    } else {
+      pushMsg('system', '⚠ 当前本地模型无法看图：' +
+        String(obj.reason || 'vision_unavailable') +
+        (obj.hint ? ' — ' + String(obj.hint) : ''));
+    }
+    return;
+  }
   if (t === 'hello') {
     const v = obj.version ? '（' + obj.version + '）' : '';
     setConn(true, '已连接 ' + v);
@@ -2535,9 +2561,11 @@ function handleIncoming(obj) {
       return;
     }
     hideBanner();
-    const label = String(obj.label || obj.name || '');
+    let label = String(obj.label || obj.name || '');
+    if (obj.vision) label += ' · 视觉';
     setModelChipLabel(label, false);
-    pushMsg('system', '已切换本地模型：' + label + '（下次对话生效）');
+    pushMsg('system', '已切换本地模型：' + label + '（下次对话生效）' +
+      (obj.vision ? '' : (obj.vision_capable ? '（加载后可视觉）' : '')));
     requestLocalModelList();
     return;
   }

@@ -1,10 +1,12 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "thin_agent/local/ILocalModel.h"
+#include "thin_agent/local/MtmdDyn.h"
 
 // 前向声明 llama.cpp C API
 struct llama_model;
@@ -16,7 +18,7 @@ namespace local {
 /// 基于 llama.cpp 的 GGUF 本地模型。
 ///
 /// 可选编译：CMake 选项 THIN_AGENT_WITH_LLAMA_CPP=ON
-/// 依赖：llama.cpp 静态库（libllama.a）+ ggml
+/// 多模态：运行时动态加载 mtmd.dll + 旁路 mmproj（THIN_AGENT_MMPROJ）
 ///
 /// 用法：
 ///   auto model = std::make_unique<GgufModel>("models/qwen2.5-1.5b-q4.gguf",
@@ -49,9 +51,12 @@ class GgufModel : public ILocalModel {
                     int max_tokens = 256,
                     const std::string& capability = "chat") override;
 
-  /// 多轮对话推理（role/content；无 system 时注入默认人设）。
-  /// 用于离线聊天携带 session 历史，避免每轮只看当前一句。
-  using ChatTurn = std::pair<std::string, std::string>;
+  /// 多轮对话（role/content；可选 image_bytes 走 mtmd）。
+  struct ChatTurn {
+    std::string role;
+    std::string content;
+    std::vector<uint8_t> image_bytes;  ///< 原始 jpeg/png 等；空=纯文本
+  };
   std::string infer_turns(const std::vector<ChatTurn>& turns,
                           int max_tokens = 256);
   void infer_stream_turns(const std::vector<ChatTurn>& turns,
@@ -72,9 +77,16 @@ class GgufModel : public ILocalModel {
   /// 模型训练窗口（加载后从 GGUF 读取；未加载为 0）。
   int n_ctx_train() const { return n_ctx_train_; }
 
+  /// 是否已加载 vision encoder（mtmd + mmproj）。
+  bool vision_ready() const { return mtmd_.ready(); }
+
+  /// 显式指定 mmproj；空字符串表示下次 load 时自动 resolve。
+  void set_mmproj_path(const std::string& path) { mmproj_path_override_ = path; }
+
  private:
   std::string name_;
   std::string model_path_;
+  std::string mmproj_path_override_;
   std::vector<ModelCapability> caps_;
   int n_ctx_requested_ = 0;  ///< 用户/调用方请求；<=0 = 跟模型
   int n_ctx_ = 0;            ///< 实际 KV 窗口
@@ -89,6 +101,8 @@ class GgufModel : public ILocalModel {
   void* sampler_ = nullptr;  ///< llama_sampler*
   size_t memory_bytes_ = 0;
   int64_t latency_us_ = 500000;  ///< 默认 500ms 典型延迟
+
+  MtmdSession mtmd_;
 };
 
 }  // namespace local

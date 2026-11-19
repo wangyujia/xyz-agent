@@ -1573,26 +1573,56 @@ namespace {
 
 std::vector<thin_agent::local::GgufModel::ChatTurn> messages_to_gguf_turns(
     const std::vector<ChatMessage>& messages) {
+  auto b64_decode = [](const std::string& in_raw) -> std::vector<uint8_t> {
+    // 兼容 data:image/...;base64,xxxx 与纯 base64
+    std::string in = in_raw;
+    auto comma = in.find("base64,");
+    if (comma != std::string::npos) in = in.substr(comma + 7);
+    auto val = [](unsigned char c) -> int {
+      if (c >= 'A' && c <= 'Z') return c - 'A';
+      if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+      if (c >= '0' && c <= '9') return c - '0' + 52;
+      if (c == '+') return 62;
+      if (c == '/') return 63;
+      if (c == '-') return 62;  // base64url
+      if (c == '_') return 63;
+      return -1;
+    };
+    std::vector<uint8_t> out;
+    out.reserve(in.size() * 3 / 4);
+    int valb = 0, valn = -8;
+    for (unsigned char c : in) {
+      if (c == '=' || c == '\n' || c == '\r' || c == ' ') continue;
+      int d = val(c);
+      if (d < 0) continue;
+      valb = (valb << 6) + d;
+      valn += 6;
+      if (valn >= 0) {
+        out.push_back(static_cast<uint8_t>((valb >> valn) & 0xFF));
+        valn -= 8;
+      }
+    }
+    return out;
+  };
+
   std::vector<thin_agent::local::GgufModel::ChatTurn> turns;
   turns.reserve(messages.size());
   for (const auto& m : messages) {
     if (m.role != "system" && m.role != "user" && m.role != "assistant") continue;
-    if (m.content.empty() && m.role != "assistant") continue;
-    std::string content = m.content;
+    if (m.content.empty() && m.role != "assistant" && m.image_base64.empty())
+      continue;
+    thin_agent::local::GgufModel::ChatTurn turn;
+    turn.role = m.role;
+    turn.content = m.content;
     // 本地窗口有限：历史 assistant 过长时截断，避免挤掉近期轮次
-    if (m.role == "assistant" && content.size() > 6000) {
-      content = content.substr(0, 6000) + "\n…";
+    if (m.role == "assistant" && turn.content.size() > 6000) {
+      turn.content = turn.content.substr(0, 6000) + "\n…";
     }
-    // 本地 GGUF 默认无 vision/mmproj：与在线 vision=false 一致，用文字占位保留意图
+    // 有图：解码交给 GgufModel（vision_ready 时走 mtmd，否则自动文字占位）
     if (m.role == "user" && !m.image_base64.empty()) {
-      const size_t b64_n = m.image_base64.size();
-      content +=
-          "\n[Attached image: base64 payload present (" +
-          std::to_string(b64_n) +
-          " chars). Local model has no vision encoder; "
-          "describe or infer from user text if needed.]";
+      turn.image_bytes = b64_decode(m.image_base64);
     }
-    turns.emplace_back(m.role, std::move(content));
+    turns.push_back(std::move(turn));
   }
   return turns;
 }
@@ -3099,6 +3129,24 @@ nlohmann::json AgentService::chat_cloud_precheck(ChatContext& ctx,
       // 与在线同一套 assemble_chat_messages；有工具时走本地 FC 循环
       const auto messages =
           assemble_chat_messages(ctx, build_offline_system_prompt(ctx));
+      if (!ctx.image_base64.empty() && ctx.on_event) {
+        if (gguf->vision_ready()) {
+          ctx.on_event("local_vision",
+                       {{"ok", true},
+                        {"mmproj", gguf->status().value("mmproj", "")}});
+        } else {
+          ctx.on_event(
+              "local_vision",
+              {{"ok", false},
+               {"reason", thin_agent::local::mtmd_runtime_available()
+                              ? "mmproj_missing_or_mismatch"
+                              : "mtmd_dll_unavailable"},
+               {"hint",
+                "Aurum/Qwen 为纯文本。放入 SmolVLM+mmproj 后切换本地模型，"
+                "或设置 THIN_AGENT_MMPROJ。脚本："
+                "backends/thin_agent/scripts/fetch_smolvlm.ps1"}});
+        }
+      }
       const int tokens = pick_tokens();
       const auto t0 = std::chrono::steady_clock::now();
 

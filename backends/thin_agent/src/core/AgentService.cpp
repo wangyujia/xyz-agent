@@ -180,6 +180,7 @@ std::string local_gguf_label(const std::string& name) {
     return s;
   }();
   if (lower.find("aurum") != std::string::npos) return "Aurum";
+  if (lower.find("smolvlm") != std::string::npos) return "SmolVLM-500M";
   if (lower.find("qwen") != std::string::npos) return "Qwen2.5-0.5B";
   if (lower.find("gemma") != std::string::npos) return "Gemma-3-1B";
   return name;
@@ -194,7 +195,7 @@ nlohmann::json AgentService::list_local_models() const {
   for (const auto& st : ModelPool::instance().status_all()) {
     if (st.value("backend", "") != "gguf") continue;
     const std::string name = st.value("name", "");
-    arr.push_back({
+    nlohmann::json item = {
         {"name", name},
         {"label", local_gguf_label(name)},
         {"backend", "gguf"},
@@ -203,7 +204,14 @@ nlohmann::json AgentService::list_local_models() const {
         {"n_ctx", st.value("n_ctx", 0)},
         {"n_ctx_train", st.value("n_ctx_train", 0)},
         {"n_ctx_auto", st.value("n_ctx_auto", true)},
-    });
+        {"vision", st.value("vision", false)},
+        {"vision_capable", st.value("vision_capable", st.value("vision", false))},
+        {"mtmd_runtime", st.value("mtmd_runtime", false)},
+    };
+    if (st.contains("mmproj")) item["mmproj"] = st["mmproj"];
+    if (st.contains("mmproj_candidate"))
+      item["mmproj_candidate"] = st["mmproj_candidate"];
+    arr.push_back(std::move(item));
   }
   if (current.empty() && !arr.empty()) {
     current = arr.front().value("name", "");
@@ -217,6 +225,7 @@ nlohmann::json AgentService::list_local_models() const {
       {"type", "local_models_list"},
       {"ok", true},
       {"llama_cpp", llama_on},
+      {"mtmd_runtime", thin_agent::local::mtmd_runtime_available()},
       {"current", current},
       {"models", arr},
   };
@@ -259,6 +268,10 @@ nlohmann::json AgentService::switch_local_model(const std::string& name) {
     out["n_ctx"] = gguf->n_ctx();
     out["n_ctx_train"] = gguf->n_ctx_train();
     out["n_ctx_auto"] = gguf->requested_n_ctx() <= 0;
+    out["vision"] = gguf->vision_ready();
+    out["mtmd_runtime"] = thin_agent::local::mtmd_runtime_available();
+    if (!gguf->status().value("mmproj", "").empty())
+      out["mmproj"] = gguf->status()["mmproj"];
   }
   return out;
 #endif
@@ -373,6 +386,18 @@ thin_agent::local::ModelPool::instance().add(std::move(tm));
             {"translate", 20, 256}},
         /*n_ctx=*/0, /*n_threads=*/4);
     thin_agent::local::ModelPool::instance().add(std::move(gemma));
+  }
+  // 真多模态：SmolVLM + 同目录 mmproj（见 scripts/fetch_smolvlm.ps1）
+  const char* smol_path =
+      "models/gguf/SmolVLM-500M-Instruct-Q8_0/SmolVLM-500M-Instruct-Q8_0.gguf";
+  if (fs::exists(smol_path)) {
+    auto smol = std::make_unique<thin_agent::local::GgufModel>(
+        smol_path,
+        std::vector<thin_agent::local::ModelCapability>{
+            {"chat", 15, 0},
+            {"vision", 5, 0}},
+        /*n_ctx=*/0, /*n_threads=*/4);
+    thin_agent::local::ModelPool::instance().add(std::move(smol));
   }
   // 默认首选：已注册的第一个 GGUF（Aurum 优先注册）；不立刻 load
   for (const auto& st : thin_agent::local::ModelPool::instance().status_all()) {
