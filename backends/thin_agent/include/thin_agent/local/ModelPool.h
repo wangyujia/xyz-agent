@@ -72,6 +72,16 @@ class ModelPool {
   /// @return 是否成功
   bool reload(const std::string& name, const std::string& new_gguf_path);
 
+  /// 指定聊天首选本地模型（按 name()，通常是 GGUF 文件名去后缀）。
+  /// cascade("chat") 会在 Template 之后优先尝试该模型；unload_others 时卸载其它 GGUF 省显存。
+  /// load_now=false 时只记首选名，不立刻 load（启动注册用）。
+  bool set_preferred_chat(const std::string& name, bool unload_others = true,
+                          bool load_now = true);
+  std::string preferred_chat() const;
+
+  /// 按名查找（含未加载）；未找到返回 nullptr。
+  ILocalModel* find_by_name(const std::string& name);
+
   /// 获取/设置默认 capability（cascade 不指定时使用）。
   std::string default_capability() const { return default_cap_; }
   void set_default_capability(const std::string& cap) { default_cap_ = cap; }
@@ -86,8 +96,12 @@ class ModelPool {
   ModelPool(const ModelPool&) = delete;
   ModelPool& operator=(const ModelPool&) = delete;
 
+  /// chat 级联排序：template → preferred → 其余（按原 priority）。
+  void order_chat_candidates_locked(std::vector<ILocalModel*>& cands) const;
+
   std::vector<std::unique_ptr<ILocalModel>> models_;
   std::string default_cap_ = "chat";
+  std::string preferred_chat_;
   mutable std::mutex mu_;
 };
 

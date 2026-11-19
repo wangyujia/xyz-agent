@@ -24,6 +24,7 @@
 #include "mongoose.h"
 #include "thin_agent/core/ActionExecutor.h"
 #include "thin_agent/core/AgentService.h"
+#include "thin_agent/core/Utf8Util.h"
 #include "thin_agent/core/GatewaySessionMap.h"  // v0.52.28
 #include "thin_agent/core/RequestDispatch.h"    // v0.53.82: 请求线程归属判据（默认异步）
 #include "thin_agent/core/TaskEngine.h"
@@ -248,7 +249,9 @@ void chat_worker_loop() {
     }
     try {
       thin_agent::StreamCallback on_chunk = [job](const std::string& chunk, bool done) {
-        nlohmann::json f{{"type", "chat_chunk"}, {"chunk", chunk}, {"done", done}};
+        nlohmann::json f{{"type", "chat_chunk"},
+                         {"chunk", thin_agent::utf8_sanitize(chunk)},
+                         {"done", done}};
         if (!job.cmd_id.empty()) f["cmd_id"] = job.cmd_id;  // v0.53.30
         enqueue_send(job.conn_id, std::move(f));
       };
@@ -481,7 +484,9 @@ void fn(struct mg_connection* c, int ev, void* ev_data) {
         // 流式回调：逐 token 推送 chat_chunk 消息
         const std::string sync_cmd_id = req.value("cmd_id", "");  // v0.53.30
         thin_agent::StreamCallback on_chunk = [c, sync_cmd_id](const std::string& chunk, bool done) {
-          nlohmann::json cf{{"type", "chat_chunk"}, {"chunk", chunk}, {"done", done}};
+          nlohmann::json cf{{"type", "chat_chunk"},
+                            {"chunk", thin_agent::utf8_sanitize(chunk)},
+                            {"done", done}};
           if (!sync_cmd_id.empty()) cf["cmd_id"] = sync_cmd_id;
           send_json(c, std::move(cf));
         };

@@ -280,9 +280,9 @@
       gap: 12px;
       background: var(--main-bg);
     }
-    .msg { display: flex; gap: 10px; max-width: min(96%, 1000px); }
-    .msg.user { align-self: flex-end; flex-direction: row-reverse; }
-    .msg.assistant { align-self: flex-start; }
+    .msg { display: flex; gap: 10px; max-width: min(98%, 1120px); width: 100%; }
+    .msg.user { align-self: flex-end; flex-direction: row-reverse; width: auto; max-width: min(86%, 820px); }
+    .msg.assistant { align-self: stretch; max-width: min(98%, 1120px); }
     .avatar {
       width: 30px; height: 30px;
       border-radius: 9px;
@@ -301,52 +301,167 @@
       border-radius: 14px;
       padding: 10px 13px;
       font-size: 14px;
-      line-height: 1.5;
-      white-space: pre-wrap;
+      line-height: 1.55;
       word-break: break-word;
       box-shadow: 0 1px 2px rgba(30,58,95,0.06), 0 3px 10px rgba(30,58,95,0.05);
       max-width: 100%;
+      min-width: 0;
+      flex: 1;
     }
     .msg.user .bubble {
       background: var(--bubble-user);
       color: var(--bubble-user-ink);
       border-bottom-right-radius: 4px;
+      white-space: pre-wrap;
+      flex: none;
     }
     .msg.assistant .bubble {
       background: var(--card-bg);
       border-bottom-left-radius: 4px;
+      white-space: normal;
     }
     .bubble h1,.bubble h2,.bubble h3 { margin: 6px 0 4px; color: var(--bubble-ink-head); }
     .bubble h1{font-size:17px}.bubble h2{font-size:15.5px}.bubble h3{font-size:14px}
     .bubble p { margin: 3px 0; }
     .bubble ul,.bubble ol { margin: 4px 0 4px 20px; }
     .bubble li { margin: 2px 0; }
-    .bubble code {
-      font-family: ui-monospace, Consolas, monospace;
+    .bubble :not(pre) > code {
+      font-family: ui-monospace, Consolas, "Cascadia Mono", monospace;
       background: var(--code-bg);
       border: 1px solid var(--code-line);
       border-radius: 4px;
       padding: 1px 4px;
       font-size: 12.5px;
     }
-    .bubble pre {
-      margin: 6px 0;
-      overflow: auto;
-      background: #0f172a;
-      color: #dbe7ff;
-      border-radius: 9px;
-      padding: 10px;
-      font-family: ui-monospace, Consolas, monospace;
-      font-size: 12.5px;
-      white-space: pre;
+    /* 贴近 llama-server WebUI 代码块 */
+    .code-block {
+      margin: 10px 0;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #0d1117;
+      color: #e6edf3;
     }
-    .bubble pre code { background: none; border: none; color: inherit; padding: 0; }
+    .code-block-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      padding: 2px 6px 2px 10px;
+      min-height: 22px;
+      background: #161b22;
+      border-bottom: 1px solid #21262d;
+      font-size: 10.5px;
+      line-height: 1;
+      color: #7d8590;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      user-select: none;
+      font-family: ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+      font-weight: 500;
+    }
+    .code-block-head .code-copy {
+      width: 22px;
+      height: 22px;
+      border: none;
+      background: transparent;
+      color: #7d8590;
+      border-radius: 4px;
+      padding: 0;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: none;
+    }
+    .code-block-head .code-copy svg {
+      width: 13px;
+      height: 13px;
+      display: block;
+    }
+    .code-block-head .code-copy .ico-check { display: none; }
+    .code-block-head .code-copy:hover { background: #21262d; color: #e6edf3; }
+    .code-block-head .code-copy.copied { color: #3fb950; }
+    .code-block-head .code-copy.copied .ico-copy { display: none; }
+    .code-block-head .code-copy.copied .ico-check { display: block; }
+    .code-block pre {
+      margin: 0;
+      padding: 10px 12px;
+      overflow-x: auto;   /* 仅允许横向；纵向直接展开，不要内部滚动条 */
+      overflow-y: visible;
+      max-height: none;
+      font-family: "Cascadia Code", "Cascadia Mono", "JetBrains Mono", "Fira Code",
+                   Consolas, "Courier New", monospace;
+      /* 气泡正文 14px；等宽字视觉偏大，略小一档 */
+      font-size: 12.5px;
+      line-height: 1.5;
+      white-space: pre;
+      background: transparent;
+      border-radius: 0;
+      /* 正文略降亮度，减少「一片白」 */
+      color: #9da7b3;
+      font-variant-ligatures: none;
+      tab-size: 4;
+    }
+    .code-block pre code { background: none; border: none; color: inherit; padding: 0; font-size: inherit; font-family: inherit; }
+    /* 贴近 llama-server：粉关键字 + 橙方法 + 蓝字面量/头文件 */
+    .tok-k { color: #ff7b72; }    /* keyword */
+    .tok-t { color: #79c0ff; }    /* STL / 类型名 */
+    .tok-f { color: #ffa657; }    /* 函数 / 成员方法 */
+    .tok-s { color: #a5d6ff; }    /* string */
+    .tok-n { color: #79b8ff; }    /* number */
+    .tok-l { color: #79c0ff; }    /* true/false/nullptr */
+    .tok-c { color: #6e7681; }    /* comment */
+    .tok-p { color: #ff7b72; }    /* #include */
+    .tok-ph { color: #79c0ff; }   /* <iostream> */
+    .tok-op { color: #ff7b72; }   /* 少量运算符 */
     .bubble a { color: var(--link); }
     .bubble blockquote {
       margin: 6px 0; padding: 4px 10px;
       border-left: 3px solid var(--code-line);
       background: var(--quote-bg); color: var(--quote-ink);
       border-radius: 4px;
+    }
+    .bubble hr {
+      border: none; border-top: 1px solid var(--card-line);
+      margin: 10px 0;
+    }
+    .bubble del { color: var(--hint-ink); }
+    .md-table-wrap {
+      margin: 8px 0;
+      overflow-x: auto;
+      border: 1px solid var(--card-line);
+      border-radius: 8px;
+      background: var(--card-bg-soft, var(--card-bg));
+    }
+    .md-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12.5px;
+      line-height: 1.45;
+      min-width: 480px;
+    }
+    .md-table th, .md-table td {
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--card-line);
+      border-right: 1px solid color-mix(in srgb, var(--card-line) 70%, transparent);
+      vertical-align: top;
+      white-space: nowrap;
+    }
+    .md-table th:last-child, .md-table td:last-child { border-right: none; }
+    .md-table th {
+      background: color-mix(in srgb, var(--card-bg-hover, #2a2f3a) 80%, transparent);
+      color: var(--ink);
+      font-weight: 600;
+      font-size: 12px;
+      position: sticky; left: 0;
+    }
+    .md-table tbody tr:last-child td { border-bottom: none; }
+    .md-table tbody tr:hover td {
+      background: color-mix(in srgb, var(--brand) 8%, transparent);
+    }
+    .md-table td:empty::after {
+      content: '\00a0';
     }
 
     /* 工具调用折叠行 */
@@ -444,38 +559,152 @@
     }
     .empty-hint .big { font-size: 34px; margin-bottom: 6px; }
 
-    /* ══ 输入区 ══ */
+    /* ══ 工具栏（图标）+ 上下文 ══ */
     .slash-bar {
       display: flex;
-      gap: 6px;
-      flex-wrap: wrap;
-      padding: 7px 18px 0;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 6px 14px 0;
+      max-width: min(98%, 1120px);
+      width: 100%;
+      margin: 0 auto;
+      box-sizing: border-box;
+      position: relative;
     }
-    .slash-bar button {
-      border: 1px solid var(--line);
+    .slash-tools {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .tool-ico {
+      width: 32px;
+      height: 32px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--ink-soft);
+      border-radius: 8px;
+      padding: 0;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .tool-ico svg { width: 16px; height: 16px; display: block; }
+    .tool-ico:hover { background: var(--card-bg-hover); color: var(--ink); border-color: var(--card-line); }
+    .tool-ico.danger:hover { color: var(--bad); }
+    .ctx-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid var(--card-line);
       background: var(--card-bg);
       color: var(--ink-soft);
       border-radius: 999px;
-      padding: 3px 12px;
-      font-size: 12px;
+      padding: 4px 10px 4px 8px;
+      font-size: 11.5px;
       cursor: pointer;
+      user-select: none;
+      max-width: 280px;
     }
-    .slash-bar button:hover { border-color: var(--brand); color: var(--brand-deep); }
+    .ctx-chip:hover { border-color: var(--brand); color: var(--ink); }
+    .ctx-chip .ctx-bar {
+      width: 52px; height: 5px;
+      border-radius: 999px;
+      background: var(--card-line);
+      overflow: hidden;
+      flex: none;
+    }
+    .ctx-chip .ctx-bar > i {
+      display: block; height: 100%; width: 0%;
+      background: linear-gradient(90deg, var(--ok), var(--brand));
+      border-radius: inherit;
+    }
+    .ctx-chip .ctx-bar.warn > i { background: #e8a23c; }
+    .ctx-chip .ctx-bar.hot > i { background: var(--bad); }
+    .ctx-panel {
+      display: none;
+      position: absolute;
+      right: 14px; bottom: calc(100% + 6px);
+      width: min(320px, calc(100% - 28px));
+      background: var(--card-bg);
+      border: 1px solid var(--card-line);
+      border-radius: 12px;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.22);
+      padding: 12px 14px;
+      z-index: 50;
+      color: var(--ink);
+      font-size: 12.5px;
+    }
+    .ctx-panel.open { display: block; }
+    .ctx-panel h4 {
+      margin: 0 0 8px;
+      font-size: 13px;
+      font-weight: 650;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: baseline;
+    }
+    .ctx-panel .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 3px 0;
+      color: var(--ink-soft);
+    }
+    .ctx-panel .row b { color: var(--ink); font-weight: 560; }
+    .ctx-panel .sep { height: 1px; background: var(--card-line); margin: 8px 0; }
+    .ctx-panel .hint { color: var(--hint-ink); font-size: 11.5px; margin-top: 6px; line-height: 1.4; }
+    .ctx-panel .ctx-compact {
+      width: 100%; margin-top: 10px; border: 1px solid var(--card-line);
+      background: var(--card-bg-soft); color: var(--ink); border-radius: 8px;
+      padding: 7px 10px; font-size: 12.5px; cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .ctx-panel .ctx-compact:hover { border-color: var(--brand); color: var(--brand-deep); }
+    .msg-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; max-width: 100%; }
+    .msg.user .msg-body { align-items: flex-end; }
+    .msg-meta {
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+      font-size: 11px; color: var(--hint-ink); padding: 0 2px;
+    }
+    .msg-meta .pill {
+      border: 1px solid var(--card-line); border-radius: 999px;
+      padding: 1px 7px; background: var(--card-bg-soft);
+    }
+    .msg-actions {
+      display: flex; align-items: center; gap: 2px;
+      opacity: 0.55; transition: opacity .15s;
+    }
+    .msg:hover .msg-actions, .msg-actions:focus-within { opacity: 1; }
+    .msg-act {
+      width: 28px; height: 28px; border: none; background: transparent;
+      color: var(--ink-soft); border-radius: 7px; cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center; padding: 0;
+    }
+    .msg-act svg { width: 14px; height: 14px; display: block; }
+    .msg-act:hover { background: var(--card-bg-hover); color: var(--ink); }
+    .msg-act.ok { color: var(--ok); }
     .input-wrap {
       position: relative;
-      padding: 8px 18px 14px;
+      padding: 4px 14px 14px;
+      max-width: min(98%, 1120px);
+      width: 100%;
+      margin: 0 auto;
+      box-sizing: border-box;
     }
     .slash-hint {
       display: none;
       position: absolute;
-      bottom: 100%;
-      left: 18px; right: 120px;
+      bottom: calc(100% - 6px);
+      left: 22px; right: 22px;
       background: var(--card-bg);
       border: 1px solid var(--line);
-      border-radius: 10px;
-      box-shadow: 0 6px 18px rgba(30,58,95,0.15);
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.18);
       padding: 6px;
-      z-index: 30;
+      z-index: 40;
       max-height: 190px;
       overflow-y: auto;
     }
@@ -491,43 +720,170 @@
     .sh-row:hover, .sh-row.first { background: var(--card-select-bg); }
     .sh-row b { color: var(--brand-deep); min-width: 66px; }
     .sh-row span { color: var(--ink-soft); font-size: 12px; }
+    /* llama-server 风格输入框：大圆角卡片 + 底栏模型胶囊 + 圆形发送 */
     .input-box {
       display: flex;
-      gap: 10px;
-      align-items: flex-end;
+      flex-direction: column;
+      gap: 8px;
       background: var(--card-bg);
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      padding: 9px 9px 9px 14px;
-      box-shadow: 0 2px 10px rgba(30,58,95,0.06);
+      border: 1px solid var(--card-line);
+      border-radius: 22px;
+      padding: 14px 14px 10px;
+      box-shadow: 0 4px 22px rgba(0,0,0,0.08);
     }
-    .input-box:focus-within { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(61,111,180,0.13); }
+    .input-box:focus-within {
+      border-color: color-mix(in srgb, var(--brand) 55%, var(--card-line));
+      box-shadow: 0 4px 24px rgba(0,0,0,0.12), 0 0 0 2px color-mix(in srgb, var(--brand) 18%, transparent);
+    }
     textarea {
-      flex: 1;
+      width: 100%;
       border: none;
       outline: none;
       resize: none;
-      font-size: 14px;
-      line-height: 1.5;
+      font-size: 15px;
+      line-height: 1.45;
       font-family: inherit;
-      min-height: 24px;
-      max-height: 130px;
+      min-height: 28px;
+      max-height: 160px;
       background: transparent;
       color: var(--ink);
+      padding: 0 4px;
+    }
+    textarea::placeholder { color: var(--hint-ink); }
+    .composer-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding-top: 2px;
+    }
+    .composer-left, .composer-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .composer-icon-btn {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      border: 1px solid var(--card-line);
+      /* 双 linear-gradient 画十字，background-position:center 在 WebView2 下最稳 */
+      background-color: transparent;
+      background-image:
+        linear-gradient(currentColor, currentColor),
+        linear-gradient(currentColor, currentColor);
+      background-size: 12px 2px, 2px 12px;
+      background-position: center center, center center;
+      background-repeat: no-repeat;
+      color: var(--ink-soft);
+      cursor: pointer;
+      padding: 0;
+      margin: 0;
+      flex: none;
+      line-height: 0;
+      font-size: 0;
+    }
+    .composer-icon-btn:hover {
+      background-color: var(--card-bg-hover);
+      color: var(--ink);
+    }
+    .model-chip {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      border: 1px solid var(--card-line);
+      background: var(--card-bg-soft);
+      color: var(--ink);
+      border-radius: 999px;
+      padding: 6px 12px 6px 10px;
+      font-size: 12.5px;
+      font-weight: 560;
+      cursor: pointer;
+      max-width: 220px;
+      user-select: none;
+    }
+    .model-chip:hover { border-color: var(--brand); }
+    .model-chip:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .model-chip .cube {
+      width: 14px; height: 14px;
+      flex: none;
+      opacity: 0.85;
+    }
+    .model-chip .chip-label {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .model-chip .chev {
+      font-size: 10px;
+      color: var(--ink-soft);
+      margin-left: 2px;
+    }
+    .model-menu {
+      display: none;
+      position: absolute;
+      right: 0;
+      bottom: calc(100% + 8px);
+      min-width: 220px;
+      max-width: 280px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-line);
+      border-radius: 12px;
+      box-shadow: 0 10px 28px rgba(0,0,0,0.2);
+      padding: 6px;
+      z-index: 50;
+      max-height: 240px;
+      overflow-y: auto;
+    }
+    .model-menu.open { display: block; }
+    .model-menu .mm-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--ink);
+    }
+    .model-menu .mm-item:hover { background: var(--card-select-bg); }
+    .model-menu .mm-item.active { background: var(--card-select-bg); font-weight: 650; }
+    .model-menu .mm-item .mm-sub {
+      font-size: 11px;
+      color: var(--ink-soft);
+      flex: none;
+    }
+    .model-menu .mm-empty {
+      padding: 10px;
+      font-size: 12px;
+      color: var(--ink-soft);
     }
     .send-btn {
+      width: 36px;
+      height: 36px;
       border: none;
-      background: linear-gradient(180deg, var(--brand), var(--brand-deep));
-      color: #fff;
-      border-radius: 10px;
-      padding: 9px 20px;
-      font-size: 13.5px;
-      font-weight: 600;
+      border-radius: 50%;
+      background: var(--ink);
+      color: var(--card-bg);
       cursor: pointer;
-      letter-spacing: 1px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: none;
+      padding: 0;
     }
-    .send-btn:hover { filter: brightness(1.08); }
-    .send-btn:disabled { background: var(--send-disabled); cursor: not-allowed; }
+    .send-btn:hover { filter: brightness(1.12); }
+    .send-btn:disabled { background: var(--send-disabled); cursor: not-allowed; filter: none; }
+    .send-btn svg { width: 16px; height: 16px; display: block; }
+    [data-theme="dark"] .send-btn {
+      background: #e8eef7;
+      color: #121820;
+    }
 
     ::-webkit-scrollbar { width: 8px; height: 8px; }
     ::-webkit-scrollbar-thumb { background: var(--sb-thumb); border-radius: 4px; }
@@ -547,6 +903,11 @@
           <option value="">连接后加载…</option>
         </select>
         <div class="channel-meta" id="channelMeta">未选择</div>
+        <div class="ch-label" style="margin-top:8px">本地模型</div>
+        <select id="localModelSel" onchange="onLocalModelChange()" disabled>
+          <option value="">连接后加载…</option>
+        </select>
+        <div class="channel-meta" id="localModelMeta">进程内 GGUF</div>
       </div>
       <div class="conn-row">
         <span id="connDot" class="conn-dot"></span>
@@ -585,17 +946,71 @@
     <div class="banner" id="banner"></div>
     <div class="messages" id="messages"></div>
     <div class="slash-bar">
-      <button onclick="newSession()">新对话</button>
-      <button onclick="quickCmd('/stop')">停止</button>
-      <button onclick="quickCmd('/compact')">压缩上下文</button>
-      <button onclick="quickCmd('/retry')">重试</button>
-      <button onclick="quickCmd('/help')">帮助</button>
+      <div class="slash-tools">
+        <button type="button" class="tool-ico" title="新对话" aria-label="新对话" onclick="newSession()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <button type="button" class="tool-ico danger" title="停止" aria-label="停止" onclick="quickCmd('/stop')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+        </button>
+        <button type="button" class="tool-ico" title="压缩上下文" aria-label="压缩上下文" onclick="quickCmd('/compact')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/><path d="M9 12h6"/></svg>
+        </button>
+        <button type="button" class="tool-ico" title="重试" aria-label="重试" onclick="quickCmd('/retry')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+        </button>
+        <button type="button" class="tool-ico" title="帮助" aria-label="帮助" onclick="quickCmd('/help')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.8 2.1c-.8.5-1.3 1-1.3 1.9"/><path d="M12 17h.01"/></svg>
+        </button>
+      </div>
+      <button type="button" class="ctx-chip" id="ctxChip" title="上下文详情" onclick="toggleCtxPanel(event)">
+        <span class="ctx-bar" id="ctxBar"><i id="ctxBarFill"></i></span>
+        <span id="ctxChipLabel">Context · —</span>
+      </button>
+      <div class="ctx-panel" id="ctxPanel" role="dialog" aria-label="上下文详情">
+        <h4><span>Context</span><span id="ctxPanelHead">—</span></h4>
+        <div class="row"><span>已用</span><b id="ctxUsedPct">—</b></div>
+        <div class="row"><span>剩余</span><b id="ctxRemain">—</b></div>
+        <div class="sep"></div>
+        <div class="row"><span>本会话 Prompt（估）</span><b id="ctxAllPrompt">0</b></div>
+        <div class="row"><span>本会话 Generated（估）</span><b id="ctxAllGen">0</b></div>
+        <div class="sep"></div>
+        <div class="row"><span>本轮 Prompt</span><b id="ctxTurnPrompt">—</b></div>
+        <div class="row"><span>本轮 Generated</span><b id="ctxTurnGen">—</b></div>
+        <div class="row"><span>平均速度</span><b id="ctxSpeed">—</b></div>
+        <div class="hint" id="ctxHint">基于本地估算；模型 n_ctx 来自 GGUF 状态。</div>
+        <button type="button" class="ctx-compact" onclick="quickCmd('/compact'); closeCtxPanel();">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"/></svg>
+          Compact conversation
+        </button>
+      </div>
     </div>
     <div class="input-wrap">
       <div class="slash-hint" id="slashHint"></div>
       <div class="input-box">
-        <textarea id="chatText" rows="1" placeholder="发消息…（/ 唤起命令）"></textarea>
-        <button class="send-btn" id="sendBtn" onclick="sendChat()">发送</button>
+        <textarea id="chatText" rows="1" placeholder="Type a message…"></textarea>
+        <div class="composer-bar">
+          <div class="composer-left">
+            <button type="button" class="composer-icon-btn" id="composerPlusBtn" title="快捷命令" onclick="toggleSlashFromPlus()" aria-label="快捷命令"></button>
+          </div>
+          <div class="composer-right">
+            <button type="button" class="model-chip" id="modelChip" disabled onclick="toggleModelMenu(event)">
+              <svg class="cube" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                <path d="M12 2.5 20 7v10l-8 4.5L4 17V7l8-4.5Z"/>
+                <path d="M12 12 20 7M12 12v9.5M12 12 4 7"/>
+              </svg>
+              <span class="chip-label" id="modelChipLabel">本地模型</span>
+              <span class="chev">▾</span>
+              <div class="model-menu" id="modelMenu" role="listbox"></div>
+            </button>
+            <button class="send-btn" id="sendBtn" onclick="sendChat()" title="发送" aria-label="发送">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 19V5"/>
+                <path d="m6 11 6-6 6 6"/>
+              </svg>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -715,30 +1130,358 @@ function loadSessions() {
   }
 }
 
-/* 极简 Markdown（复用 ws_agent 成熟规则的精简版） */
+/* ── Markdown / 代码高亮（轻量正则，非完整 LSP）──
+ * 分层：别名 → 词表 → highlight（字符串/注释同趟）→ mdToHtml → 复制委托
+ * 嵌入 WebView 单文件约束下保持同文件，但数据与流水线分离。
+ */
+const LANG_META = {
+  c: { fam: 'c', label: 'C' }, h: { fam: 'c', label: 'C' },
+  cpp: { fam: 'cpp', label: 'CPP' }, 'c++': { fam: 'cpp', label: 'CPP' },
+  cxx: { fam: 'cpp', label: 'CPP' }, cc: { fam: 'cpp', label: 'CPP' }, hpp: { fam: 'cpp', label: 'CPP' },
+  java: { fam: 'java', label: 'JAVA' },
+  csharp: { fam: 'cs', label: 'C#' }, cs: { fam: 'cs', label: 'C#' },
+  go: { fam: 'go', label: 'GO' }, golang: { fam: 'go', label: 'GO' },
+  rust: { fam: 'rust', label: 'RUST' }, rs: { fam: 'rust', label: 'RUST' },
+  python: { fam: 'py', label: 'PYTHON' }, py: { fam: 'py', label: 'PYTHON' },
+  javascript: { fam: 'js', label: 'JS' }, js: { fam: 'js', label: 'JS' }, jsx: { fam: 'js', label: 'JS' },
+  typescript: { fam: 'ts', label: 'TS' }, ts: { fam: 'ts', label: 'TS' }, tsx: { fam: 'ts', label: 'TS' },
+  bash: { fam: 'sh', label: 'BASH' }, sh: { fam: 'sh', label: 'BASH' },
+  shell: { fam: 'sh', label: 'BASH' }, zsh: { fam: 'sh', label: 'BASH' },
+  sql: { fam: 'sql', label: 'SQL' }, json: { fam: 'json', label: 'JSON' },
+  html: { fam: 'generic', label: 'HTML' }, css: { fam: 'generic', label: 'CSS' },
+  yaml: { fam: 'generic', label: 'YAML' }, yml: { fam: 'generic', label: 'YAML' },
+  markdown: { fam: 'generic', label: 'MD' }, md: { fam: 'generic', label: 'MD' },
+  text: { fam: 'generic', label: 'TEXT' }, plain: { fam: 'generic', label: 'TEXT' }
+};
+
+const LANG_LEXICON = {
+  c: {
+    style: 'c-like',
+    kws: 'auto|break|case|char|const|continue|default|do|double|else|enum|extern|float|for|goto|if|inline|int|long|register|restrict|return|short|signed|sizeof|static|struct|switch|typedef|union|unsigned|void|volatile|while',
+    types: 'size_t|ssize_t|uint8_t|uint16_t|uint32_t|uint64_t|int8_t|int16_t|int32_t|int64_t|ptrdiff_t|FILE',
+    lits: 'true|false|NULL'
+  },
+  cpp: {
+    style: 'c-like',
+    kws: 'alignas|alignof|and|and_eq|asm|auto|bitand|bitor|bool|break|case|catch|char|class|compl|concept|const|consteval|constexpr|constinit|continue|co_await|co_return|co_yield|decltype|default|delete|do|double|dynamic_cast|else|enum|explicit|export|extern|float|for|friend|goto|if|inline|int|long|mutable|namespace|new|noexcept|not|not_eq|operator|or|or_eq|private|protected|public|register|reinterpret_cast|requires|return|short|signed|sizeof|static|static_assert|static_cast|struct|switch|template|this|thread_local|throw|try|typedef|typeid|typename|union|unsigned|using|virtual|void|volatile|wchar_t|while|xor|xor_eq',
+    types: 'string|vector|map|set|queue|stack|list|deque|unordered_map|unordered_set|pair|tuple|optional|shared_ptr|unique_ptr|weak_ptr|size_t|ssize_t|uint8_t|uint16_t|uint32_t|uint64_t|int8_t|int16_t|int32_t|int64_t|Node|Edge|Graph|Point',
+    lits: 'true|false|nullptr|NULL'
+  },
+  java: {
+    style: 'c-like',
+    kws: 'abstract|assert|boolean|break|byte|case|catch|char|class|const|continue|default|do|double|else|enum|extends|final|finally|float|for|goto|if|implements|import|instanceof|int|interface|long|native|new|package|private|protected|public|return|short|static|strictfp|super|switch|synchronized|this|throw|throws|transient|try|void|volatile|while|var|yield|record|sealed|permits',
+    types: 'String|Integer|Boolean|List|ArrayList|Map|HashMap|Set|HashSet|Optional|Object|System|Exception',
+    lits: 'true|false|null'
+  },
+  cs: {
+    style: 'c-like',
+    kws: 'abstract|as|base|bool|break|byte|case|catch|char|checked|class|const|continue|decimal|default|delegate|do|double|else|enum|event|explicit|extern|finally|fixed|float|for|foreach|goto|if|implicit|in|int|interface|internal|is|lock|long|namespace|new|object|operator|out|override|params|private|protected|public|readonly|ref|return|sbyte|sealed|short|sizeof|stackalloc|static|string|struct|switch|this|throw|try|typeof|uint|ulong|unchecked|unsafe|ushort|using|virtual|void|volatile|while|async|await|var|dynamic|nameof|when|yield|record|init|required|nint|nuint',
+    types: 'String|List|Dictionary|HashSet|Task|IEnumerable|Action|Func|Exception',
+    lits: 'true|false|null'
+  },
+  go: {
+    style: 'c-like',
+    kws: 'break|case|chan|const|continue|default|defer|else|fallthrough|for|func|go|goto|if|import|interface|map|package|range|return|select|struct|switch|type|var',
+    types: 'string|bool|byte|rune|error|int|int8|int16|int32|int64|uint|uint8|uint16|uint32|uint64|uintptr|float32|float64|complex64|complex128|any',
+    lits: 'true|false|nil|iota'
+  },
+  rust: {
+    style: 'c-like',
+    kws: 'as|async|await|break|const|continue|crate|dyn|else|enum|extern|fn|for|if|impl|in|let|loop|match|mod|move|mut|pub|ref|return|self|Self|static|struct|super|trait|type|unsafe|use|where|while|yield',
+    types: 'String|str|Vec|Option|Result|Box|Rc|Arc|HashMap|HashSet|i8|i16|i32|i64|i128|u8|u16|u32|u64|u128|f32|f64|usize|isize|bool',
+    lits: 'true|false|None|Some|Ok|Err'
+  },
+  py: {
+    style: 'py',
+    kws: 'and|as|assert|async|await|break|class|continue|def|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|nonlocal|not|or|pass|raise|return|try|while|with|yield|match|case',
+    types: 'int|float|str|bool|list|dict|set|tuple|bytes|object|Exception|Optional|List|Dict|Set|Tuple|Any',
+    lits: 'True|False|None'
+  },
+  js: {
+    style: 'c-like',
+    kws: 'break|case|catch|class|const|continue|debugger|default|delete|do|else|export|extends|finally|for|function|if|import|in|instanceof|let|new|return|super|switch|this|throw|try|typeof|var|void|while|with|yield|async|await|of|from|as|static|get|set',
+    types: 'Array|Object|String|Number|Boolean|Map|Set|Promise|Error|Date|RegExp|JSON',
+    lits: 'true|false|null|undefined|NaN|Infinity'
+  },
+  ts: {
+    style: 'c-like',
+    kws: 'break|case|catch|class|const|continue|debugger|default|delete|do|else|export|extends|finally|for|function|if|import|in|instanceof|let|new|return|super|switch|this|throw|try|typeof|var|void|while|with|yield|async|await|of|from|as|static|get|set|type|interface|implements|enum|readonly|namespace|module|declare|abstract|keyof|infer|satisfies|override',
+    types: 'Array|Object|String|Number|Boolean|Map|Set|Promise|Error|Date|RegExp|Record|Partial|Required|Readonly|any|unknown|never|string|number|boolean|bigint|symbol',
+    lits: 'true|false|null|undefined|NaN|Infinity'
+  },
+  sh: {
+    style: 'sh',
+    kws: 'if|then|else|elif|fi|for|while|until|do|done|case|esac|function|select|time|coproc|in',
+    types: '',
+    lits: 'true|false'
+  },
+  sql: {
+    style: 'sql',
+    kws: 'select|from|where|and|or|not|insert|into|values|update|set|delete|create|table|alter|drop|index|join|left|right|inner|outer|on|as|group|by|order|having|limit|offset|union|all|distinct|null|is|in|like|between|exists|case|when|then|else|end|primary|key|foreign|references|constraint|default|unique|check|with|asc|desc',
+    types: 'int|integer|bigint|smallint|varchar|char|text|boolean|bool|float|double|decimal|numeric|date|time|timestamp|json|uuid|blob',
+    lits: 'true|false|null'
+  },
+  json: { style: 'json', kws: '', types: '', lits: 'true|false|null' },
+  generic: {
+    style: 'c-like',
+    kws: 'if|else|for|while|return|function|class|const|let|var|def|import|from|new|try|catch|throw|break|continue|switch|case|do|in|of|async|await',
+    types: 'string|int|float|bool|list|dict|map|set|vector|array|object',
+    lits: 'true|false|null|None|True|False|undefined|nil'
+  }
+};
+
+const _lexCache = Object.create(null);
+
+function resolveLang(lang) {
+  const key = String(lang || '').toLowerCase().trim();
+  const meta = LANG_META[key];
+  const fam = meta ? meta.fam : 'generic';
+  const label = meta ? meta.label : (key ? key.toUpperCase() : 'CODE');
+  return { key, fam, label };
+}
+
+function langLexicon(lang) {
+  const { fam, label } = resolveLang(lang);
+  if (_lexCache[fam]) return _lexCache[fam];
+  const base = LANG_LEXICON[fam] || LANG_LEXICON.generic;
+  const flags = base.style === 'sql' ? 'gi' : 'g';
+  const parkAlt = '\\uE000\\d+\\uE001';
+  const compiled = {
+    fam,
+    label,
+    style: base.style,
+    reLit: base.lits ? new RegExp(parkAlt + '|\\b(?:' + base.lits + ')\\b', flags) : null,
+    reKw: base.kws ? new RegExp(parkAlt + '|\\b(?:' + base.kws + ')\\b', flags) : null,
+    reTy: base.types ? new RegExp(parkAlt + '|\\b(?:' + base.types + ')\\b', flags) : null
+  };
+  _lexCache[fam] = compiled;
+  return compiled;
+}
+
+function highlightCode(code, lang) {
+  const lex = langLexicon(lang);
+  // park：先占位再还原，避免后续 \bclass\b 误伤 span 的 class=
+  const slots = [];
+  const park = (html) => {
+    const id = slots.length;
+    slots.push(html);
+    return '\uE000' + id + '\uE001';
+  };
+  const wrap = (cls, text) => park('<span class="' + cls + '">' + text + '</span>');
+  const isPark = (m) => m.charCodeAt(0) === 0xE000;
+  let s = esc(code);
+
+  // 字符串 + 注释同一趟（字符串优先），避免 "http://..." / "...#..." 被注释规则吃掉
+  const paintToken = (m) => {
+    if (m.startsWith('/*') || m.startsWith('//') || m.startsWith('#') || m.startsWith('--'))
+      return wrap('tok-c', m);
+    return wrap('tok-s', m);
+  };
+  if (lex.style === 'py') {
+    s = s.replace(/("""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|#(?:[^\n]*))/g, paintToken);
+  } else if (lex.style === 'sh') {
+    s = s.replace(/("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|#(?:[^\n]*))/g, paintToken);
+  } else if (lex.style === 'sql') {
+    s = s.replace(/(\/\*[\s\S]*?\*\/|--[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/g, paintToken);
+  } else if (lex.style === 'json') {
+    s = s.replace(/"(?:\\.|[^"\\])*"/g, m => wrap('tok-s', m));
+  } else {
+    s = s.replace(/(\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)/g, paintToken);
+  }
+
+  if (lex.fam === 'c' || lex.fam === 'cpp') {
+    s = s.replace(/^(\s*#\s*include\s*)(&lt;[^&]+&gt;|\"[^\"]+\")/gm,
+      (_, a, b) => wrap('tok-p', a) + wrap('tok-ph', b));
+    s = s.replace(/^(\s*#\s*\w+[^\n]*)/gm, m =>
+      m.indexOf('\uE000') >= 0 ? m : wrap('tok-p', m));
+  }
+
+  s = s.replace(/\uE000\d+\uE001|\b(0x[0-9a-fA-F]+|\d+\.\d+[fF]?|\d+[uUlL]*)\b/g, (m) =>
+    isPark(m) ? m : wrap('tok-n', m));
+
+  if (lex.reLit) s = s.replace(lex.reLit, (m) => isPark(m) ? m : wrap('tok-l', m));
+  if (lex.reKw) s = s.replace(lex.reKw, (m) => isPark(m) ? m : wrap('tok-k', m));
+  if (lex.reTy) s = s.replace(lex.reTy, (m) => isPark(m) ? m : wrap('tok-t', m));
+
+  if (lex.style !== 'json' && lex.style !== 'sql') {
+    s = s.replace(/(\.|-&gt;)([A-Za-z_]\w*)(?=\s*\()/g, (_, op, name) => op + wrap('tok-f', name));
+    s = s.replace(/\uE000\d+\uE001|\b([A-Za-z_]\w*)(?=\s*\()/g, (m) =>
+      isPark(m) ? m : wrap('tok-f', m));
+    s = s.replace(/(&amp;&amp;|\|\||!=|==|&lt;=|&gt;=)/g, m => wrap('tok-op', m));
+  }
+
+  for (let i = 0; i < 10; i++) {
+    const next = s.replace(/\uE000(\d+)\uE001/g, (_, id) => slots[Number(id)] || '');
+    if (next === s) break;
+    s = next;
+  }
+  return s;
+}
+
+const COPY_ICON =
+  '<svg class="ico-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<rect x="9" y="9" width="11" height="11" rx="2"/>' +
+  '<path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+const CHECK_ICON =
+  '<svg class="ico-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<path d="M5 12.5 10 17.5 19 7"/></svg>';
+
+function renderCodeBlock(lang, code) {
+  const raw = String(code || '').replace(/\n$/, '');
+  const { key, label } = resolveLang(lang);
+  return '<div class="code-block" data-code="' + encodeURIComponent(raw) + '">' +
+    '<div class="code-block-head"><span>' + esc(label) + '</span>' +
+    '<button type="button" class="code-copy" title="复制代码" aria-label="复制代码">' +
+    COPY_ICON + CHECK_ICON + '</button></div>' +
+    '<pre><code>' + highlightCode(raw, key) + '</code></pre></div>';
+}
+
+function splitMdTableRow(line) {
+  let s = String(line || '').trim().replace(/\uFF5C/g, '|'); // 全角｜
+  if (s.startsWith('|')) s = s.slice(1);
+  if (s.endsWith('|')) s = s.slice(0, -1);
+  return s.split('|').map(c => c.trim());
+}
+function isMdTableSep(line) {
+  const cells = splitMdTableRow(line);
+  // 模型常写 |:-:|（1 根短横）；GFM 规范是 3+，两边都收
+  if (cells.length < 1) return false;
+  return cells.every(c => /^:?-+:?$/.test(c));
+}
+function isMdTableRow(line) {
+  const s = String(line || '').trim().replace(/\uFF5C/g, '|');
+  if (!s || s.indexOf('|') < 0) return false;
+  if (isMdTableSep(s)) return true;
+  // 至少两列：a|b 或 |a|b|
+  return splitMdTableRow(s).length >= 2;
+}
+function renderMdTable(block) {
+  const lines = String(block || '').trim().split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length < 2 || !isMdTableSep(lines[1])) return '';
+  const headers = splitMdTableRow(lines[0]);
+  if (headers.length < 1) return '';
+  const aligns = splitMdTableRow(lines[1]).map(c => {
+    const L = c.startsWith(':'), R = c.endsWith(':');
+    if (L && R) return 'center';
+    if (R) return 'right';
+    return 'left';
+  });
+  let html = '<div class="md-table-wrap"><table class="md-table"><thead><tr>';
+  headers.forEach((h, i) => {
+    html += '<th style="text-align:' + (aligns[i] || 'left') + '">' + h + '</th>';
+  });
+  html += '</tr></thead><tbody>';
+  for (let i = 2; i < lines.length; i++) {
+    if (!isMdTableRow(lines[i]) || isMdTableSep(lines[i])) continue;
+    const cells = splitMdTableRow(lines[i]);
+    html += '<tr>';
+    for (let j = 0; j < headers.length; j++) {
+      html += '<td style="text-align:' + (aligns[j] || 'left') + '">' + (cells[j] || '') + '</td>';
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table></div>';
+  return html;
+}
+/** 按行扫描抽出 GFM 表（比整块正则稳，流式半成品也能尽早成表） */
+function extractMdTables(text) {
+  const lines = String(text || '').split('\n');
+  const out = [];
+  const tables = [];
+  let i = 0;
+  while (i < lines.length) {
+    const cur = lines[i];
+    const nxt = i + 1 < lines.length ? lines[i + 1] : '';
+    if (isMdTableRow(cur) && isMdTableSep(nxt) && splitMdTableRow(cur).length >= 1) {
+      let j = i + 2;
+      while (j < lines.length && isMdTableRow(lines[j]) && !isMdTableSep(lines[j])) j++;
+      const html = renderMdTable(lines.slice(i, j).join('\n'));
+      if (html) {
+        const id = tables.length;
+        tables.push(html);
+        out.push('%%TABLE' + id + '%%');
+        i = j;
+        continue;
+      }
+    }
+    out.push(cur);
+    i++;
+  }
+  return { text: out.join('\n'), tables };
+}
+
+/* Markdown：先抽出代码块再排版；流式未闭合 ``` 也立即高亮 */
 function mdToHtml(src = '') {
-  let t = esc(src);
-  // 代码块
-  t = t.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) =>
-    '<pre><code>' + code.replace(/\n$/, '') + '</code></pre>');
+  const blocks = [];
+  const take = (lang, code) => {
+    const id = blocks.length;
+    blocks.push(renderCodeBlock(String(lang || '').trim(), code));
+    return '\n%%CODEBLOCK' + id + '%%\n';
+  };
+  let t = String(src || '').replace(/\r\n/g, '\n').replace(/\uFF5C/g, '|');
+  t = t.replace(/```([^\n`]*)\n?([\s\S]*?)```/g, (_, lang, code) => take(lang, code));
+  // 仅吞「仍以围栏开头的尾巴」，避免误伤正文里的孤立 ```
+  t = t.replace(/(^|\n)```([^\n`]*)\n?([\s\S]*)$/g, (_, pre, lang, code) => pre + take(lang, code));
+  t = esc(t);
   t = t.replace(/`([^`\n]+)`/g, '<code>$1</code>');
-  // 标题/粗斜体
   t = t.replace(/^### (.+)$/gm, '<h3>$1</h3>');
   t = t.replace(/^## (.+)$/gm, '<h2>$1</h2>');
   t = t.replace(/^# (.+)$/gm, '<h1>$1</h1>');
   t = t.replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
+  t = t.replace(/~~([^~\n]+)~~/g, '<del>$1</del>');
   t = t.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<i>$2</i>');
-  // 列表
-  t = t.replace(/^[-•] (.+)$/gm, '<li>$1</li>');
-  t = t.replace(/(<li>[\s\S]*?<\/li>)(?!\s*<li>)/g, '<ul>$1</ul>');
-  t = t.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
-  // 引用/链接
+  t = t.replace(/^(-{3,}|\*{3,}|_{3,})\s*$/gm, '<hr>');
+  const extracted = extractMdTables(t);
+  t = extracted.text;
+  const tables = extracted.tables;
+  // 有序 / 无序列表整块包裹
+  t = t.replace(/(?:(?:^|\n)\d+\. [^\n]+)+/g, (m) => {
+    const items = m.trim().split('\n').map(l => l.replace(/^\d+\.\s+/, ''));
+    return '\n<ol>' + items.map(i => '<li>' + i + '</li>').join('') + '</ol>\n';
+  });
+  t = t.replace(/(?:(?:^|\n)[-•*] [^\n]+)+/g, (m) => {
+    const items = m.trim().split('\n').map(l => l.replace(/^[-•*]\s+/, ''));
+    return '\n<ul>' + items.map(i => '<li>' + i + '</li>').join('') + '</ul>\n';
+  });
   t = t.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
-  t = t.replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
-  // 段落（未被标签包裹的行）
-  t = t.replace(/^(?!<[a-z/])(.+)$/gm, '<p>$1</p>');
+  t = t.replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  t = t.replace(/^(?!<[a-zA-Z/]|%%CODEBLOCK\d+%%|%%TABLE\d+%%)(.+)$/gm, '<p>$1</p>');
   t = t.replace(/<p><\/p>/g, '');
+  t = t.replace(/\n{2,}/g, '\n');
+  t = t.replace(/%%TABLE(\d+)%%/g, (_, i) => tables[Number(i)] || '');
+  t = t.replace(/%%CODEBLOCK(\d+)%%/g, (_, i) => blocks[Number(i)] || '');
   return t;
+}
+
+function bindCodeCopy(root) {
+  if (!root || root._codeCopyBound) return;
+  root._codeCopyBound = true;
+  root.addEventListener('click', (e) => {
+    const btn = e.target.closest && e.target.closest('.code-copy');
+    if (!btn) return;
+    const block = btn.closest('.code-block');
+    if (!block) return;
+    let text = '';
+    try { text = decodeURIComponent(block.getAttribute('data-code') || ''); } catch (_) {}
+    const done = () => {
+      btn.classList.add('copied');
+      btn.title = '已复制';
+      setTimeout(() => { btn.classList.remove('copied'); btn.title = '复制代码'; }, 1200);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => {
+        const ta = document.createElement('textarea');
+        ta.value = text; document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); } catch (_) {}
+        ta.remove(); done();
+      });
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (_) {}
+      ta.remove(); done();
+    }
+  });
 }
 
 /* ══════════════ 会话管理 ══════════════ */
@@ -820,6 +1563,27 @@ function pushMsgTo(sid, kind, text, extra) {
 function pushMsg(kind, text, extra) {
   pushMsgTo(activeId, kind, text, extra);
 }
+function patchLastAssistantMeta(meta) {
+  const s = activeSession(); if (!s || !meta) return;
+  const msgs = loadMsgs(s.id);
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].kind !== 'assistant') continue;
+    Object.assign(msgs[i], meta);
+    if (msgs[i].tokens && msgs[i].latency_ms) {
+      msgs[i].speed = Number(((msgs[i].tokens * 1000) / msgs[i].latency_ms).toFixed(2));
+    }
+    saveMsgs(s.id, msgs);
+    noteTurnUsage({
+      promptTok: ctxStats.lastPrompt || estimateTokens(lastUserTextForTurn()),
+      genTok: msgs[i].tokens || estimateTokens(msgs[i].text || ''),
+      latencyMs: msgs[i].latency_ms,
+      model: msgs[i].model,
+      nCtx: meta.n_ctx || ctxStats.n_ctx,
+    });
+    renderMessages();
+    break;
+  }
+}
 
 /* ══════════════ 渲染 ══════════════ */
 function renderMessages() {
@@ -836,20 +1600,89 @@ function renderMessages() {
     box.innerHTML = '<div class="empty-hint"><div class="big">👋</div>有什么可以帮你？</div>';
     return;
   }
-  msgs.forEach(m => box.appendChild(buildMsgEl(m)));
+  msgs.forEach((m, i) => box.appendChild(buildMsgEl(m, i)));
   // v12: 流式行存活于重绘——流进行中收到 system/error/工具帧触发
   // pushMsgTo→全量重绘会吃掉流式气泡（streamingEl.row 悬空,显示丢帧）
   if (streamingEl && streamingEl.sid === s.id) box.appendChild(streamingEl.row);
   if (typingEl) box.appendChild(typingEl);  // v12: thinking 点存活于重绘（同类悬空）
   box.scrollTop = box.scrollHeight;
+  refreshCtxFromSession();
 }
 
-function buildMsgEl(m) {
+function svgIco(paths) {
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + paths + '</svg>';
+}
+const ICO = {
+  copy: '<path d="M8 8h10v12H8z"/><path d="M6 16H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/>',
+  edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>',
+  regen: '<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/>',
+  branch: '<circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><path d="M8 6h8M6 8v8M8 18h4a4 4 0 0 0 4-4V8"/>',
+  trash: '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/>',
+};
+function copyText(text, btn) {
+  const done = () => {
+    if (btn) { btn.classList.add('ok'); btn.title = '已复制'; setTimeout(() => { btn.classList.remove('ok'); btn.title = '复制'; }, 1000); }
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => {
+      const ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (_) {}
+      ta.remove(); done();
+    });
+  } else {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch (_) {}
+    ta.remove(); done();
+  }
+}
+function buildMsgEl(m, msgIndex) {
   if (m.kind === 'user' || m.kind === 'assistant') {
     const div = document.createElement('div');
     div.className = 'msg ' + m.kind;
-    div.innerHTML = '<div class="avatar">' + (m.kind === 'user' ? '我' : 'Z') + '</div>' +
-      '<div class="bubble">' + (m.kind === 'assistant' ? mdToHtml(m.text) : esc(m.text)) + '</div>';
+    const body = document.createElement('div');
+    body.className = 'msg-body';
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.innerHTML = m.kind === 'assistant' ? mdToHtml(m.text) : esc(m.text);
+    body.appendChild(bubble);
+    if (m.kind === 'assistant' && (m.model || m.tokens || m.latency_ms || m.speed)) {
+      const meta = document.createElement('div');
+      meta.className = 'msg-meta';
+      const bits = [];
+      if (m.model) bits.push('<span class="pill">' + esc(String(m.model)) + '</span>');
+      if (m.tokens) bits.push('<span>' + fmtTok(m.tokens) + ' tokens</span>');
+      if (m.latency_ms) bits.push('<span>' + fmtSec(m.latency_ms) + '</span>');
+      if (m.speed) bits.push('<span>' + Number(m.speed).toFixed(2) + ' t/s</span>');
+      meta.innerHTML = bits.join('');
+      body.appendChild(meta);
+    }
+    const acts = document.createElement('div');
+    acts.className = 'msg-actions';
+    const mk = (title, paths, fn) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'msg-act'; b.title = title; b.setAttribute('aria-label', title);
+      b.innerHTML = svgIco(paths);
+      b.onclick = (e) => { e.stopPropagation(); fn(b); };
+      return b;
+    };
+    acts.appendChild(mk('复制', ICO.copy, (b) => copyText(String(m.text || ''), b)));
+    acts.appendChild(mk('编辑', ICO.edit, () => {
+      const ta = $('chatText');
+      if (!ta) return;
+      ta.value = String(m.text || '');
+      ta.focus();
+      ta.dispatchEvent(new Event('input'));
+    }));
+    if (m.kind === 'assistant') {
+      acts.appendChild(mk('重新生成', ICO.regen, () => quickCmd('/retry')));
+      acts.appendChild(mk('分支对话', ICO.branch, () => forkFromMessage(msgIndex)));
+    }
+    acts.appendChild(mk('删除', ICO.trash, () => deleteMessageAt(msgIndex)));
+    body.appendChild(acts);
+    div.innerHTML = '<div class="avatar">' + (m.kind === 'user' ? '我' : 'Z') + '</div>';
+    div.appendChild(body);
     return div;
   }
   if (m.kind === 'tool') {
@@ -891,6 +1724,7 @@ function startStream(cmdId) {
   // 文本丢失）;旧流无文本则直接弃
   if (streamingEl) {
     const prev = streamingEl;
+    if (prev._mdTimer) clearTimeout(prev._mdTimer);
     streamingEl = null;
     prev.row.remove();
     if (prev.text.trim()) pushMsgTo(prev.sid, 'assistant', prev.text);
@@ -902,24 +1736,87 @@ function startStream(cmdId) {
   box.appendChild(row);
   row.scrollIntoView({ block: 'end' });
   streamingEl = { row, bubble: row.querySelector('.bubble'), text: '', cmdId,
-                  sid: activeId };
+                  sid: activeId, t0: performance.now(),
+                  promptTok: estimateTokens(lastUserTextForTurn()) };
+}
+function lastUserTextForTurn() {
+  const s = activeSession();
+  if (!s) return '';
+  const msgs = loadMsgs(s.id);
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].kind === 'user') return String(msgs[i].text || '');
+  }
+  return '';
+}
+function flushStreamMd() {
+  if (!streamingEl) return;
+  if (streamingEl._mdTimer) {
+    clearTimeout(streamingEl._mdTimer);
+    streamingEl._mdTimer = null;
+  }
+  if (streamingEl.sid !== activeId) return;
+  streamingEl.bubble.innerHTML = mdToHtml(streamingEl.text);
+  $('messages').scrollTop = $('messages').scrollHeight;
+  streamingEl._lastMd = performance.now();
 }
 function appendStream(cmdId, chunk) {
   if (!streamingEl || streamingEl.cmdId !== cmdId) startStream(cmdId);
   streamingEl.text += chunk;
   // v8: 仅当视图仍在该流所属会话时渲染 DOM——切走后只积累,落库仍归原会话
+  // 流式 md 节流：长代码 48ms；表格出现后加快，表头分隔行到达则立刻刷
   if (streamingEl.sid === activeId) {
-    streamingEl.bubble.textContent = streamingEl.text;
-    $('messages').scrollTop = $('messages').scrollHeight;
+    const chunkStr = String(chunk || '');
+    const text = streamingEl.text;
+    const tableSepHit = /\|[ \t]*:?-+:?[ \t]*(\|[ \t]*:?-+:?[ \t]*)+\|/.test(text.slice(-120));
+    const inTable = tableSepHit || (text.indexOf('|') >= 0 && /\n[ \t]*\|/.test(text));
+    if (tableSepHit && /\n/.test(chunkStr)) {
+      flushStreamMd();
+      return;
+    }
+    const gap = inTable ? 18 : 48;
+    const now = performance.now();
+    const due = gap - (now - (streamingEl._lastMd || 0));
+    if (due <= 0 && !streamingEl._mdTimer) {
+      flushStreamMd();
+    } else if (!streamingEl._mdTimer) {
+      streamingEl._mdTimer = setTimeout(flushStreamMd, Math.max(12, due));
+    }
   }
 }
-function endStream(cmdId) {
+let lastStreamedCmdId = '';
+function endStream(cmdId, extraMeta) {
   if (streamingEl && streamingEl.cmdId === cmdId) {
+    if (streamingEl._mdTimer) {
+      clearTimeout(streamingEl._mdTimer);
+      streamingEl._mdTimer = null;
+    }
     const text = streamingEl.text;
     const sid = streamingEl.sid;   // v2: 流所属会话
+    const latencyMs = Math.max(1, performance.now() - (streamingEl.t0 || performance.now()));
+    const promptTok = streamingEl.promptTok || 0;
+    const genTok = estimateTokens(text);
+    const speed = genTok > 0 ? (genTok * 1000) / latencyMs : 0;
     streamingEl.row.remove();
     streamingEl = null;
-    if (text.trim()) pushMsgTo(sid, 'assistant', text);
+    if (text.trim()) {
+      const meta = Object.assign({
+        tokens: genTok,
+        latency_ms: Math.round(latencyMs),
+        speed: Number(speed.toFixed(2)),
+        model: ctxStats.model || '',
+      }, extraMeta || {});
+      if (extraMeta && extraMeta.latency_ms != null) {
+        meta.latency_ms = extraMeta.latency_ms;
+        meta.speed = meta.tokens > 0 && meta.latency_ms > 0
+          ? Number(((meta.tokens * 1000) / meta.latency_ms).toFixed(2)) : meta.speed;
+      }
+      pushMsgTo(sid, 'assistant', text, meta);
+      noteTurnUsage({
+        promptTok, genTok: meta.tokens, latencyMs: meta.latency_ms,
+        model: meta.model, nCtx: (extraMeta && extraMeta.n_ctx) || ctxStats.n_ctx,
+      });
+      lastStreamedCmdId = String(cmdId);
+    }
   }
 }
 
@@ -1062,6 +1959,272 @@ function onChannelChange() {
   setTimeout(() => { if (sel) sel.disabled = false; }, 800);
 }
 
+/* ── 上下文用量（llama-server 风格）── */
+const ctxStats = {
+  n_ctx: 0,
+  model: '',
+  lastPrompt: 0,
+  lastGen: 0,
+  totalPrompt: 0,
+  totalGen: 0,
+  lastLatencyMs: 0,
+  lastSpeed: 0,
+};
+function estimateTokens(s) {
+  if (!s) return 0;
+  let cjk = 0, other = 0;
+  for (const ch of String(s)) {
+    const c = ch.codePointAt(0) || 0;
+    if ((c >= 0x4e00 && c <= 0x9fff) || (c >= 0x3400 && c <= 0x4dbf) ||
+        (c >= 0x3040 && c <= 0x30ff) || (c >= 0xac00 && c <= 0xd7af)) cjk++;
+    else if (c > 32) other++;
+  }
+  return cjk + Math.ceil(other / 4);
+}
+function fmtTok(n) {
+  n = Math.max(0, Math.round(Number(n) || 0));
+  if (n >= 10000) return (n / 1000).toFixed(2).replace(/\.?0+$/, '') + 'K';
+  if (n >= 1000) return (n / 1000).toFixed(2) + 'K';
+  return String(n);
+}
+function fmtSec(ms) {
+  const s = Math.max(0, Number(ms) || 0) / 1000;
+  if (s < 10) return s.toFixed(1) + 's';
+  return Math.round(s) + 's';
+}
+function toggleCtxPanel(ev) {
+  if (ev) ev.stopPropagation();
+  const p = $('ctxPanel');
+  if (!p) return;
+  p.classList.toggle('open');
+}
+function closeCtxPanel() {
+  const p = $('ctxPanel');
+  if (p) p.classList.remove('open');
+}
+function renderCtxPanel() {
+  const nCtx = ctxStats.n_ctx || 0;
+  const used = Math.min(nCtx || Infinity, (ctxStats.lastPrompt || 0) + (ctxStats.lastGen || 0) ||
+    (ctxStats.totalPrompt + ctxStats.totalGen));
+  const pct = nCtx > 0 ? Math.min(100, Math.round((used / nCtx) * 100)) : 0;
+  const remain = nCtx > 0 ? Math.max(0, nCtx - used) : 0;
+  const chip = $('ctxChipLabel');
+  const bar = $('ctxBar');
+  const fill = $('ctxBarFill');
+  if (chip) chip.textContent = nCtx > 0
+    ? ('Context · ' + fmtTok(used) + ' / ' + fmtTok(nCtx))
+    : ('Context · ' + fmtTok(used) + ' tok');
+  if (fill) fill.style.width = (nCtx > 0 ? pct : 0) + '%';
+  if (bar) {
+    bar.classList.remove('warn', 'hot');
+    if (pct >= 85) bar.classList.add('hot');
+    else if (pct >= 60) bar.classList.add('warn');
+  }
+  const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+  set('ctxPanelHead', nCtx > 0 ? (fmtTok(used) + ' / ' + fmtTok(nCtx)) : fmtTok(used));
+  set('ctxUsedPct', nCtx > 0 ? (pct + '% used') : '—');
+  set('ctxRemain', nCtx > 0 ? (fmtTok(remain) + ' remaining') : '—');
+  set('ctxAllPrompt', fmtTok(ctxStats.totalPrompt) + ' tok');
+  set('ctxAllGen', fmtTok(ctxStats.totalGen) + ' tok');
+  set('ctxTurnPrompt', ctxStats.lastPrompt ? (fmtTok(ctxStats.lastPrompt) + ' tok') : '—');
+  set('ctxTurnGen', ctxStats.lastGen ? (fmtTok(ctxStats.lastGen) + ' tok') : '—');
+  set('ctxSpeed', ctxStats.lastSpeed ? (Number(ctxStats.lastSpeed).toFixed(1) + ' t/s') : '—');
+  const hint = $('ctxHint');
+  if (hint) {
+    hint.textContent = ctxStats.model
+      ? ('模型 ' + ctxStats.model + (nCtx ? (' · n_ctx=' + nCtx) : '') + ' · token 为估算')
+      : '基于本地估算；模型 n_ctx 来自 GGUF 状态。';
+  }
+}
+function refreshCtxFromSession() {
+  const s = activeSession();
+  if (!s) { renderCtxPanel(); return; }
+  const msgs = loadMsgs(s.id);
+  let prompt = 0, gen = 0;
+  msgs.forEach(m => {
+    const t = estimateTokens(m.text || '');
+    if (m.kind === 'user') prompt += t;
+    else if (m.kind === 'assistant') gen += (m.tokens || t);
+  });
+  ctxStats.totalPrompt = prompt;
+  ctxStats.totalGen = gen;
+  if (!ctxStats.lastPrompt && !ctxStats.lastGen) {
+    // 尚无本轮数据时，用会话合计近似占用
+  }
+  renderCtxPanel();
+}
+function noteTurnUsage({ promptTok, genTok, latencyMs, model, nCtx }) {
+  if (nCtx > 0) ctxStats.n_ctx = nCtx;
+  if (model) ctxStats.model = model;
+  if (promptTok != null) ctxStats.lastPrompt = promptTok;
+  if (genTok != null) ctxStats.lastGen = genTok;
+  if (latencyMs != null) {
+    ctxStats.lastLatencyMs = latencyMs;
+    if (genTok > 0 && latencyMs > 0) ctxStats.lastSpeed = (genTok * 1000) / latencyMs;
+  }
+  renderCtxPanel();
+}
+function deleteMessageAt(idx) {
+  const s = activeSession(); if (!s) return;
+  const msgs = loadMsgs(s.id);
+  if (idx < 0 || idx >= msgs.length) return;
+  msgs.splice(idx, 1);
+  saveMsgs(s.id, msgs);
+  renderMessages();
+}
+function forkFromMessage(idx) {
+  const s = activeSession(); if (!s) return;
+  const msgs = loadMsgs(s.id);
+  if (idx < 0 || idx >= msgs.length) return;
+  const slice = msgs.slice(0, idx + 1).map(m => Object.assign({}, m));
+  newSession();
+  const ns = activeSession();
+  if (!ns) return;
+  saveMsgs(ns.id, slice);
+  if (slice.length) {
+    const firstUser = slice.find(m => m.kind === 'user');
+    if (firstUser) ns.name = (firstUser.text || '分支').slice(0, 16);
+    saveSessions();
+  }
+  renderSessionList();
+  renderMessages();
+}
+
+/* ── 进程内本地 GGUF（热切换，无需重启）── */
+let localModelSwitching = false;
+let localModelsCache = [];
+function requestLocalModelList() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  sendRaw({ type: 'list_local_models' });
+}
+function setModelChipLabel(text, disabled) {
+  const chip = $('modelChip');
+  const lab = $('modelChipLabel');
+  if (lab) lab.textContent = text || '本地模型';
+  if (chip) chip.disabled = !!disabled;
+}
+function fillLocalModelSelect(obj) {
+  const sel = $('localModelSel');
+  const meta = $('localModelMeta');
+  const menu = $('modelMenu');
+  const models = Array.isArray(obj.models) ? obj.models : [];
+  localModelsCache = models;
+  const current = String(obj.current || '');
+  if (!obj.llama_cpp) {
+    if (sel) {
+      sel.innerHTML = '<option value="">未启用进程内 GGUF</option>';
+      sel.disabled = true;
+    }
+    if (meta) meta.textContent = '需 THIN_AGENT_WITH_LLAMA_CPP=ON';
+    if (menu) menu.innerHTML = '<div class="mm-empty">未启用进程内 GGUF</div>';
+    setModelChipLabel('未启用 GGUF', true);
+    return;
+  }
+  if (!models.length) {
+    if (sel) {
+      sel.innerHTML = '<option value="">无本地 GGUF</option>';
+      sel.disabled = true;
+    }
+    if (meta) meta.textContent = '请放入 models/gguf/*.gguf';
+    if (menu) menu.innerHTML = '<div class="mm-empty">无本地 GGUF，请放入 models/gguf</div>';
+    setModelChipLabel('无本地模型', true);
+    return;
+  }
+  let html = '';
+  let menuHtml = '';
+  models.forEach(m => {
+    const name = String(m.name || '');
+    const base = String(m.label || name);
+    let label = base;
+    if (m.loaded) label += ' · 已加载';
+    html += '<option value="' + esc(name) + '">' + esc(label) + '</option>';
+    const active = name === current ? ' active' : '';
+    menuHtml += '<div class="mm-item' + active + '" data-name="' + esc(name) + '" role="option">' +
+      '<span>' + esc(base) + '</span>' +
+      '<span class="mm-sub">' + (m.loaded ? '已加载' : name) + '</span></div>';
+  });
+  if (sel) {
+    sel.innerHTML = html;
+    sel.disabled = false;
+    localModelSwitching = true;
+    if (current) {
+      for (let i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].value === current) { sel.selectedIndex = i; break; }
+      }
+    }
+    localModelSwitching = false;
+  }
+  if (menu) {
+    menu.innerHTML = menuHtml;
+    menu.querySelectorAll('.mm-item').forEach(el => {
+      el.onclick = (e) => {
+        e.stopPropagation();
+        pickLocalModel(el.getAttribute('data-name'));
+      };
+    });
+  }
+  const chosen = (sel && sel.value) ? sel.value : current;
+  const cur = models.find(m => String(m.name) === chosen) || models[0] || {};
+  const chipText = String(cur.label || cur.name || current || '本地模型');
+  setModelChipLabel(chipText, false);
+  if (meta) meta.textContent = chipText + (cur.loaded ? ' · 已加载' : '');
+  const nCtx = Number(cur.n_ctx || cur.n_ctx_train || 0) || 0;
+  if (nCtx > 0) ctxStats.n_ctx = nCtx;
+  if (chipText) ctxStats.model = chipText;
+  renderCtxPanel();
+}
+function closeModelMenu() {
+  const menu = $('modelMenu');
+  if (menu) menu.classList.remove('open');
+}
+function toggleModelMenu(ev) {
+  if (ev) ev.stopPropagation();
+  const chip = $('modelChip');
+  const menu = $('modelMenu');
+  if (!chip || chip.disabled || !menu) return;
+  menu.classList.toggle('open');
+}
+function pickLocalModel(name) {
+  closeModelMenu();
+  if (!name) return;
+  const sel = $('localModelSel');
+  if (sel) {
+    localModelSwitching = true;
+    sel.value = name;
+    localModelSwitching = false;
+  }
+  switchLocalModel(name);
+}
+function onLocalModelChange() {
+  if (localModelSwitching) return;
+  const sel = $('localModelSel');
+  if (!sel || !sel.value) return;
+  switchLocalModel(sel.value);
+}
+function switchLocalModel(name) {
+  if (!name) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showBanner('未连接后端，无法切换本地模型');
+    return;
+  }
+  const sel = $('localModelSel');
+  const chip = $('modelChip');
+  if (sel) sel.disabled = true;
+  if (chip) chip.disabled = true;
+  showBanner('正在切换本地模型…');
+  sendRaw({ type: 'switch_local_model', name: name });
+}
+function toggleSlashFromPlus() {
+  const ta = $('chatText');
+  if (!ta) return;
+  if (!ta.value.startsWith('/')) {
+    ta.value = '/' + ta.value;
+  }
+  ta.focus();
+  ta.dispatchEvent(new Event('input'));
+}
+document.addEventListener('click', () => closeModelMenu());
+
 async function discover() {
   if (typeof window.discoverBackends === 'function') {
     try {
@@ -1082,6 +2245,15 @@ function setConn(on, text) {
       ch.innerHTML = '<option value="">连接后加载…</option>';
     }
   }
+  const lm = $('localModelSel');
+  if (lm && !on) {
+    lm.disabled = true;
+    lm.innerHTML = '<option value="">连接后加载…</option>';
+  }
+  if (!on) {
+    setModelChipLabel('未连接', true);
+    closeModelMenu();
+  }
 }
 
 function showBanner(msg) { const b = $('banner'); b.textContent = msg; b.classList.add('show'); }
@@ -1098,6 +2270,7 @@ function connectWs() {
     hideBanner();
     setConn(true);
     requestChannelList();
+    requestLocalModelList();
   };
   ws.onclose = () => {
     setConn(false);
@@ -1258,7 +2431,23 @@ function handleIncoming(obj) {
     thinkingBuf = '';
     const tEl = $('thinkingStream');
     if (tEl) { tEl.style.display = 'none'; tEl.textContent = ''; }
-    if (streamingEl && streamingEl.cmdId === String(obj.cmd_id)) endStream(String(obj.cmd_id));
+    const cid = String(obj.cmd_id || '');
+    const usage = (obj.usage && typeof obj.usage === 'object') ? obj.usage : {};
+    const nCtx = Number(obj.n_ctx || usage.n_ctx || 0) || 0;
+    const latUs = Number(usage.latency_us || 0) || 0;
+    const usageMeta = {
+      model: String(usage.model || obj.model || ctxStats.model || ''),
+      n_ctx: nCtx || undefined,
+    };
+    if (latUs > 0) usageMeta.latency_ms = Math.round(latUs / 1000);
+    // 流式已通过 chat_chunk 落库时，勿再用 chat_result.text 重复插一条
+    let alreadyStreamed = (lastStreamedCmdId && lastStreamedCmdId === cid);
+    if (streamingEl && streamingEl.cmdId === cid) {
+      endStream(cid, usageMeta);
+      alreadyStreamed = true;
+    } else if (alreadyStreamed && (usageMeta.latency_ms || usageMeta.model)) {
+      patchLastAssistantMeta(usageMeta);
+    }
     if (obj.needs_approval) {
       // 服务端契约：text=完整提示（含工具名+参数摘要），
       // pending_tool_name/pending_tool_args=结构化字段（v0.52.2 实测字段名）
@@ -1274,7 +2463,22 @@ function handleIncoming(obj) {
       return;
     }
     const text = String(obj.text ?? obj.message ?? '').trim();
-    if (text) pushMsg('assistant', text);
+    if (text && !alreadyStreamed) {
+      const genTok = Number(usage.completion_tokens || usage.output_tokens || 0) || estimateTokens(text);
+      const promptTok = Number(usage.prompt_tokens || usage.input_tokens || 0) || estimateTokens(lastUserTextForTurn());
+      const meta = Object.assign({
+        tokens: genTok,
+        model: usageMeta.model,
+      }, usageMeta.latency_ms ? {
+        latency_ms: usageMeta.latency_ms,
+        speed: genTok > 0 && usageMeta.latency_ms > 0
+          ? Number(((genTok * 1000) / usageMeta.latency_ms).toFixed(2)) : undefined,
+      } : {});
+      pushMsg('assistant', text, meta);
+      noteTurnUsage({
+        promptTok, genTok, latencyMs: meta.latency_ms, model: meta.model, nCtx: nCtx || ctxStats.n_ctx,
+      });
+    }
     return;
   }
   if (t === 'tool_call' || t === 'tool_use') {
@@ -1293,6 +2497,7 @@ function handleIncoming(obj) {
     setConn(true, '已连接 ' + v);
     if (obj.status) applyChannelStatus(obj.status);
     requestChannelList();
+    requestLocalModelList();
     return;
   }
   if (t === 'profiles_list') {
@@ -1311,6 +2516,29 @@ function handleIncoming(obj) {
     const label = String(obj.profile || obj.channel || '');
     pushMsg('system', '已切换模型通道：' + label +
       (obj.provider ? '（' + obj.provider + (obj.model ? ' / ' + obj.model : '') + '）' : ''));
+    requestLocalModelList();
+    return;
+  }
+  if (t === 'local_models_list') {
+    fillLocalModelSelect(obj);
+    return;
+  }
+  if (t === 'local_model_switched') {
+    const sel = $('localModelSel');
+    const chip = $('modelChip');
+    if (sel) sel.disabled = false;
+    if (chip) chip.disabled = false;
+    if (obj.ok === false) {
+      showBanner('切换本地模型失败：' + String(obj.error || obj.message || 'unknown'));
+      pushMsg('system', '❌ 切换本地模型失败：' + String(obj.error || obj.hint || 'unknown'));
+      requestLocalModelList();
+      return;
+    }
+    hideBanner();
+    const label = String(obj.label || obj.name || '');
+    setModelChipLabel(label, false);
+    pushMsg('system', '已切换本地模型：' + label + '（下次对话生效）');
+    requestLocalModelList();
     return;
   }
   if (t === 'error') {
@@ -1367,6 +2595,15 @@ function applyHint() {
   renderSessionList();
   renderMessages();
   refreshBackendSel();
+  bindCodeCopy($('messages'));
+  document.addEventListener('click', (e) => {
+    const panel = $('ctxPanel');
+    const chip = $('ctxChip');
+    if (!panel || !panel.classList.contains('open')) return;
+    if (panel.contains(e.target) || (chip && chip.contains(e.target))) return;
+    closeCtxPanel();
+  });
+  renderCtxPanel();
 
   const ta = $('chatText');
   ta.addEventListener('input', () => {

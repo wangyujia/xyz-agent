@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -90,6 +91,22 @@ bool intent_triggered(const IntentSpec& spec, const std::string& classified, con
 
 using ApprovalChecker = std::function<bool(const std::string& tool_name,
                                             const nlohmann::json& args)>;
+
+/// 离线 GGUF 工具循环：与云端 FC 同构（解析 tool_calls → 执行 → 回灌），
+/// 但用文本协议触发工具（本地模型通常无原生 tools API）。
+/// generate: 给定 messages，返回助手纯文本（可含 tool_calls JSON）。
+CloudChatResult run_local_tool_loop(
+    std::function<std::string(const std::vector<ChatMessage>&, int)> generate,
+    std::vector<ChatMessage> messages,
+    const nlohmann::json& tools_schema,
+    SkillRegistry& skill_registry,
+    int max_tokens_per_turn = 2048,
+    int max_iterations = 12,
+    bool use_zh_progress = true,
+    EventCallback on_event = nullptr,
+    StreamCallback on_chunk = nullptr,
+    std::function<bool()> abort_checker = nullptr,
+    ApprovalChecker approval_checker = nullptr);
 
 CloudChatResult run_function_calling_loop(
     const DemoConfigCompat& cfg,

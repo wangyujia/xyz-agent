@@ -171,6 +171,99 @@ bool probe_local_openai_endpoint(const std::string& api_base) {
 
 }  // namespace
 
+namespace {
+
+std::string local_gguf_label(const std::string& name) {
+  const std::string lower = [&]() {
+    std::string s = name;
+    for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return s;
+  }();
+  if (lower.find("aurum") != std::string::npos) return "Aurum";
+  if (lower.find("qwen") != std::string::npos) return "Qwen2.5-0.5B";
+  if (lower.find("gemma") != std::string::npos) return "Gemma-3-1B";
+  return name;
+}
+
+}  // namespace
+
+nlohmann::json AgentService::list_local_models() const {
+  using thin_agent::local::ModelPool;
+  nlohmann::json arr = nlohmann::json::array();
+  std::string current = ModelPool::instance().preferred_chat();
+  for (const auto& st : ModelPool::instance().status_all()) {
+    if (st.value("backend", "") != "gguf") continue;
+    const std::string name = st.value("name", "");
+    arr.push_back({
+        {"name", name},
+        {"label", local_gguf_label(name)},
+        {"backend", "gguf"},
+        {"loaded", st.value("loaded", false)},
+        {"memory_bytes", st.value("memory_bytes", 0)},
+        {"n_ctx", st.value("n_ctx", 0)},
+        {"n_ctx_train", st.value("n_ctx_train", 0)},
+        {"n_ctx_auto", st.value("n_ctx_auto", true)},
+    });
+  }
+  if (current.empty() && !arr.empty()) {
+    current = arr.front().value("name", "");
+  }
+#ifndef THIN_AGENT_WITH_LLAMA_CPP
+  const bool llama_on = false;
+#else
+  const bool llama_on = true;
+#endif
+  return {
+      {"type", "local_models_list"},
+      {"ok", true},
+      {"llama_cpp", llama_on},
+      {"current", current},
+      {"models", arr},
+  };
+}
+
+nlohmann::json AgentService::switch_local_model(const std::string& name) {
+  if (name.empty()) {
+    return {{"type", "local_model_switched"}, {"ok", false}, {"error", "missing_name"}};
+  }
+#ifndef THIN_AGENT_WITH_LLAMA_CPP
+  return {{"type", "local_model_switched"},
+          {"ok", false},
+          {"error", "llama_cpp_disabled"},
+          {"hint", "请用 THIN_AGENT_WITH_LLAMA_CPP=ON 重编 thin_agent"}};
+#else
+  using thin_agent::local::ModelPool;
+  auto* m = ModelPool::instance().find_by_name(name);
+  if (!m || m->backend() != "gguf") {
+    return {{"type", "local_model_switched"},
+            {"ok", false},
+            {"error", "model_not_found"},
+            {"name", name}};
+  }
+  if (!ModelPool::instance().set_preferred_chat(name, true)) {
+    return {{"type", "local_model_switched"},
+            {"ok", false},
+            {"error", "load_failed"},
+            {"name", name},
+            {"hint", "检查 GGUF 路径与显存/内存"}};
+  }
+  nlohmann::json out = {
+      {"type", "local_model_switched"},
+      {"ok", true},
+      {"name", name},
+      {"label", local_gguf_label(name)},
+      {"loaded", true},
+      {"memory_bytes", static_cast<int64_t>(m->memory_bytes())},
+  };
+  if (auto* gguf = dynamic_cast<thin_agent::local::GgufModel*>(m)) {
+    out["n_ctx"] = gguf->n_ctx();
+    out["n_ctx_train"] = gguf->n_ctx_train();
+    out["n_ctx_auto"] = gguf->requested_n_ctx() <= 0;
+  }
+  return out;
+#endif
+}
+
 nlohmann::json AgentService::switch_channel(const std::string& channel) {
   if (channel.empty()) {
     return {{"type", "profile_switched"}, {"ok", false}, {"error", "missing_profile"}};
@@ -251,13 +344,14 @@ thin_agent::local::ModelPool::instance().add(std::move(tm));
 #ifdef THIN_AGENT_WITH_LLAMA_CPP
 {
   namespace fs = std::filesystem;
+  // n_ctx=0：加载时按 GGUF 的 n_ctx_train 动态决定，不写死 2k/4k
   const char* aurum_path = "models/gguf/aurum-brain-q4_k_m.gguf";
   if (fs::exists(aurum_path)) {
     auto aurum = std::make_unique<thin_agent::local::GgufModel>(
         aurum_path,
         std::vector<thin_agent::local::ModelCapability>{
-            {"chat", 5, 4096}},
-        4096, 4);
+            {"chat", 5, 0}},
+        /*n_ctx=*/0, /*n_threads=*/4);
     thin_agent::local::ModelPool::instance().add(std::move(aurum));
   }
   const char* qwen_path = "models/gguf/qwen2.5-0.5b-instruct-q2_k.gguf";
@@ -265,9 +359,9 @@ thin_agent::local::ModelPool::instance().add(std::move(tm));
     auto qwen = std::make_unique<thin_agent::local::GgufModel>(
         qwen_path,
         std::vector<thin_agent::local::ModelCapability>{
-            {"chat", 10, 2048},
+            {"chat", 10, 0},
             {"translate", 10, 128}},
-        2048, 4);
+        /*n_ctx=*/0, /*n_threads=*/4);
     thin_agent::local::ModelPool::instance().add(std::move(qwen));
   }
   const char* gemma_path = "models/gguf/gemma-3-1b-it-q4_k_m.gguf";
@@ -275,10 +369,18 @@ thin_agent::local::ModelPool::instance().add(std::move(tm));
     auto gemma = std::make_unique<thin_agent::local::GgufModel>(
         gemma_path,
         std::vector<thin_agent::local::ModelCapability>{
-            {"chat", 20, 4096},
+            {"chat", 20, 0},
             {"translate", 20, 256}},
-        4096, 4);
+        /*n_ctx=*/0, /*n_threads=*/4);
     thin_agent::local::ModelPool::instance().add(std::move(gemma));
+  }
+  // 默认首选：已注册的第一个 GGUF（Aurum 优先注册）；不立刻 load
+  for (const auto& st : thin_agent::local::ModelPool::instance().status_all()) {
+    if (st.value("backend", "") == "gguf") {
+      thin_agent::local::ModelPool::instance().set_preferred_chat(
+          st.value("name", ""), /*unload_others=*/false, /*load_now=*/false);
+      break;
+    }
   }
 }
 #endif
@@ -1183,11 +1285,13 @@ nlohmann::json AgentService::status_payload() const {
     snap = cfg_;
     channel = active_channel_;
   }
+  std::string local_model = thin_agent::local::ModelPool::instance().preferred_chat();
   return {
       {"mode", snap.mode},
       {"provider", normalize_provider(snap.provider)},
       {"model", snap.model_name},
       {"channel", channel},
+      {"local_model", local_model},
       {"fallback", snap.fallback},
       {"uptime_seconds", std::chrono::duration_cast<std::chrono::seconds>(
                              std::chrono::steady_clock::now() - start_time_)

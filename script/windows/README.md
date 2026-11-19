@@ -69,6 +69,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File script\windows\start-windows
 
 侧栏「模型通道」热切换只改进程内路由，**不**迁移会话/记忆目录（数据目录仍跟启动时的 `-AgentProfile`）。协议：`list_profiles` / `switch_profile`。
 
+侧栏「本地模型」可在已注册的进程内 GGUF（如 Aurum / Qwen）之间热切换：`list_local_models` / `switch_local_model`（会卸载其它 GGUF 并加载所选模型）。需 `offline_demo`（或走 HybridRouter 的离线路径）且 `THIN_AGENT_WITH_LLAMA_CPP=ON`。
+
 | 展示名（约） | profile | 说明 |
 | --- | --- | --- |
 | 离线规则 / 进程内 GGUF | `offline_demo` | 默认；有 GGUF 且 ON 编译时走 HybridRouter→Aurum |

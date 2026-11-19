@@ -415,6 +415,12 @@ nlohmann::json AgentService::chat_route_local_intents(ChatContext& ctx) {
                                   contains_any_policy(ctx.text_lower, "status_advice_status") &&
                                   contains_any_policy(ctx.text_lower, "status_advice_task_exec");
 
+  // 已选进程内 GGUF 时：闲聊/身份类交给模型（贴近 llama-server），
+  // 仅保留帮助列表与明确动作类本地意图。
+  const std::string preferred_gguf =
+      thin_agent::local::ModelPool::instance().preferred_chat();
+  const bool prefer_local_llm = !preferred_gguf.empty();
+
   // 配置驱动的本地意图（profile / status / event / memory_* / 特殊 predicate）
   if (!ctx.force_cloud_for_complex) {
     const auto local_names = local_intent_names();
@@ -425,6 +431,24 @@ nlohmann::json AgentService::chat_route_local_intents(ChatContext& ctx) {
       IntentSpec local_spec;
       if (!load_intent_spec(local_name, &local_spec) || local_spec.kind != "local") continue;
       if (intent_route_excluded(local_spec, ctx.text, ctx.text_lower)) continue;
+
+      if (prefer_local_llm) {
+        const bool is_help = is_offline_help_query(ctx.text);
+        const bool action_local =
+            local_name == "weather" || local_name == "news" || local_name == "event" ||
+            local_name.find("memory") != std::string::npos ||
+            local_name.find("media") != std::string::npos ||
+            local_name.find("capture") != std::string::npos ||
+            local_name.find("record") != std::string::npos;
+        if (local_name == "profile" || local_name == "status" ||
+            local_name == "onnx_knowledge" || local_name == "supported_languages" ||
+            local_name == "short_ack") {
+          if (!(local_name == "profile" && is_help)) continue;
+        } else if (!action_local && local_name != "profile") {
+          // 其它模糊 local 也不抢 LLM
+          if (local_spec.handler == "profile" || local_spec.handler == "status") continue;
+        }
+      }
 
       bool triggered = intent_triggered(local_spec, ctx.classified_intent, ctx.text, ctx.text_lower);
       // v0.46.0: classified 为明确的非 local 意图（如 autonomy=cloud）时，
@@ -1363,6 +1387,218 @@ nlohmann::json AgentService::chat_route_task_action_gate(ChatContext& ctx) {
   return nullptr;
 }
 
+std::vector<ChatMessage> AgentService::assemble_chat_messages(
+    ChatContext& ctx, std::string system_prompt) {
+  std::vector<ChatMessage> messages;
+  if (!system_prompt.empty()) {
+    messages.push_back(ChatMessage{"system", std::move(system_prompt)});
+  }
+
+  // 对话摘要（ConversationSummarizer）——在线/离线同一条
+  if (summarizer_) {
+    std::string summary_prefix = summarizer_->summary_prefix();
+    if (!summary_prefix.empty()) {
+      messages.push_back(ChatMessage{"system", std::move(summary_prefix)});
+    }
+  }
+
+  // 会话历史：snapshot 最后一条是本轮 user，前面才是历史
+  for (size_t i = 0; i + 1 < ctx.snapshot.size(); ++i) {
+    const auto& m = ctx.snapshot[i];
+    if (m.role == "user" || m.role == "assistant") {
+      messages.push_back(m);
+    }
+  }
+
+  // 工具结果缓存
+  {
+    std::lock_guard<std::mutex> lk(mu_);
+    if (!tool_result_cache_.empty()) {
+      std::string tool_ctx = "Recent tool results:\n";
+      for (const auto& e : tool_result_cache_) {
+        tool_ctx += "[" + e.action + "] " + e.params_summary + ": " +
+                    e.result_truncated + "\n";
+      }
+      messages.push_back(ChatMessage{"user", std::move(tool_ctx)});
+    }
+  }
+
+  ChatMessage umsg{"user", ctx.text};
+  if (!ctx.image_base64.empty()) {
+    umsg.image_base64 = ctx.image_base64;
+  }
+  messages.push_back(std::move(umsg));
+  return messages;
+}
+
+void AgentService::enrich_shared_system_prompt(ChatContext& ctx,
+                                               std::string& system_prompt,
+                                               const std::string& fact_role,
+                                               bool offline) {
+  // runtime
+  {
+    std::string cwd = "unknown";
+    try {
+      cwd = std::filesystem::current_path().string();
+    } catch (...) {
+    }
+    system_prompt += "\n\n=== YOUR RUNTIME ENVIRONMENT (authoritative) ===";
+    system_prompt += "\n- Working directory: " + cwd;
+    system_prompt += "\n- Running mode: " + cfg_.mode;
+    if (offline) {
+      system_prompt += "\n- Provider: local-gguf";
+      if (!cfg_.model_name.empty())
+        system_prompt += ", Model: " + cfg_.model_name;
+    } else {
+      system_prompt +=
+          "\n- Provider: " + normalize_provider(cfg_.provider) +
+          ", Model: " + cfg_.model_name;
+    }
+    system_prompt += "\n=== END RUNTIME INFO ===";
+  }
+
+  // 项目约定文件
+  {
+    auto try_inject = [&](const std::string& fname) -> bool {
+      std::ifstream f(fname);
+      if (!f.is_open()) return false;
+      std::string content((std::istreambuf_iterator<char>(f)),
+                          std::istreambuf_iterator<char>());
+      if (content.size() > 2000)
+        content = utf8_truncate(content, 2000) + "\n...(truncated)";
+      system_prompt += "\n\n=== PROJECT CONTEXT (" + fname + ") ===\n" + content +
+                       "\n=== END PROJECT CONTEXT ===";
+      return true;
+    };
+    for (const auto& name : {"AGENTS.md", "CLAUDE.md", ".cursorrules"}) {
+      if (try_inject(name)) break;
+    }
+  }
+
+  if (fact_store_) {
+    std::string mem_block = fact_store_->hot_snapshot(fact_role, 4000);
+    if (!mem_block.empty()) system_prompt += "\n\n" + mem_block;
+  }
+  if (kb_searcher_ && !ctx.text.empty()) {
+    auto kb_results = kb_searcher_->search(ctx.text, 3);
+    if (kb_results.is_array() && !kb_results.empty()) {
+      std::string kb_context;
+      for (const auto& r : kb_results) {
+        std::string key = r.value("key", r.value("title", ""));
+        std::string val = r.value("content", r.value("snippet", r.dump()));
+        kb_context += "- " + key + ": " + utf8_truncate(val, 300) + "\n";
+      }
+      if (!kb_context.empty()) {
+        system_prompt += "\n\n=== KNOWLEDGE BASE CONTEXT ===\n" + kb_context +
+                         "=== END KB CONTEXT ===";
+      }
+    }
+  }
+  if (memory_manager_ && !ctx.text.empty()) {
+    std::string mem_ctx = memory_manager_->build_context(ctx.text, 3);
+    if (!mem_ctx.empty()) system_prompt += "\n\n" + mem_ctx;
+  }
+  if (skill_manager_ && !ctx.text.empty()) {
+    auto matched = skill_manager_->match_skills(ctx.text, 3, 0.3f);
+    if (!matched.empty()) {
+      std::string skill_inj = agent::SkillManager::to_prompt_injection(matched);
+      if (!skill_inj.empty()) {
+        system_prompt += "\n\n" + skill_inj;
+        for (const auto& s : matched) matched_skill_ids_.push_back(s.id);
+      }
+    }
+  }
+  if (goal_mgr_) {
+    std::string goal_ctx = goal_mgr_->to_prompt_injection();
+    if (!goal_ctx.empty()) system_prompt += "\n\n" + goal_ctx;
+  }
+  if (correction_store_) {
+    std::vector<std::string> known_tools;
+    for (const auto& t : agent::ToolRegistry::instance().all_tools())
+      known_tools.push_back(t.name);
+    std::string corr_ctx = correction_store_->to_prompt_injection(known_tools);
+    if (!corr_ctx.empty()) system_prompt += "\n\n" + corr_ctx;
+  }
+  {
+    std::string skill_info = skill_registry_.build_skill_prompt_text();
+    if (!skill_info.empty()) {
+      system_prompt += "\n\nAVAILABLE SKILLS:\n" + skill_info;
+    }
+  }
+  if (!project_structure_.empty()) {
+    system_prompt += "\n\n=== PROJECT STRUCTURE ===\n" + project_structure_ +
+                     "=== END PROJECT STRUCTURE ===\n";
+  }
+}
+
+std::string AgentService::build_offline_system_prompt(ChatContext& ctx) {
+  // 与在线 FC 对齐：优先 AgentRole（developer / worker）作 base
+  std::string system_prompt;
+  std::string fact_role;
+  const bool is_dev = (std::getenv("THIN_AGENT_DEV_MODE") != nullptr &&
+                       std::string(std::getenv("THIN_AGENT_DEV_MODE")) == "1");
+  const std::string default_role_name = is_dev ? "developer" : "worker";
+  const agent::AgentRole* default_role =
+      role_mgr_ ? role_mgr_->find(default_role_name) : nullptr;
+
+  if (default_role && !default_role->system_prompt.empty()) {
+    system_prompt = default_role->system_prompt;
+    fact_role = default_role->name;
+  } else if (ctx.use_zh_progress) {
+    system_prompt = "你是 thin_agent，在本地离线模型上运行。用中文回复，简洁专业。";
+  } else {
+    system_prompt =
+        "You are thin_agent running on a local offline model. "
+        "Reply in the same language as the user. Be concise and professional.";
+  }
+
+  // 离线特有的连续性约束（角色 prompt 通常不覆盖多轮澄清场景）
+  system_prompt +=
+      "\n\n[Offline continuity] Maintain continuity with prior turns. "
+      "When the user clarifies or corrects earlier facts (paths, names, assumptions), "
+      "treat the clarification as ground truth and continue the task; "
+      "do not dismiss it as a misunderstanding of basic concepts.";
+
+  if (is_dev) {
+    auto wf = WorkflowManager::instance().current();
+    system_prompt =
+        WorkflowManager::instance().inject_into_system_prompt(system_prompt, wf);
+  }
+
+  enrich_shared_system_prompt(ctx, system_prompt, fact_role, /*offline=*/true);
+  return system_prompt;
+}
+
+namespace {
+
+std::vector<thin_agent::local::GgufModel::ChatTurn> messages_to_gguf_turns(
+    const std::vector<ChatMessage>& messages) {
+  std::vector<thin_agent::local::GgufModel::ChatTurn> turns;
+  turns.reserve(messages.size());
+  for (const auto& m : messages) {
+    if (m.role != "system" && m.role != "user" && m.role != "assistant") continue;
+    if (m.content.empty() && m.role != "assistant") continue;
+    std::string content = m.content;
+    // 本地窗口有限：历史 assistant 过长时截断，避免挤掉近期轮次
+    if (m.role == "assistant" && content.size() > 6000) {
+      content = content.substr(0, 6000) + "\n…";
+    }
+    // 本地 GGUF 默认无 vision/mmproj：与在线 vision=false 一致，用文字占位保留意图
+    if (m.role == "user" && !m.image_base64.empty()) {
+      const size_t b64_n = m.image_base64.size();
+      content +=
+          "\n[Attached image: base64 payload present (" +
+          std::to_string(b64_n) +
+          " chars). Local model has no vision encoder; "
+          "describe or infer from user text if needed.]";
+    }
+    turns.emplace_back(m.role, std::move(content));
+  }
+  return turns;
+}
+
+}  // namespace
+
 /// v0.50.0: 云端执行域（原 handle_chat 段 G2）。
 /// tools schema + 简单文件操作 fast FC + 缓存 + checkpoint + 主 FC 循环
 /// （含 HITL 审批）+ cloud_done 后处理。命中终态返回 final；云失败
@@ -1660,186 +1896,49 @@ AgentService::ChatCloudResult AgentService::chat_run_cloud(ChatContext& ctx,
     }
   }
 
-  // ── 构建 function calling tools schema（fast 和 main 共用）──
-  // 注入可用 skills 到 system prompt
-  std::string system_prompt = cloud_strategist_system_prompt();
-  matched_skill_ids_.clear();  // v0.38.1: 每次请求重置匹配列表
-
-  // 注入运行时信息（避免 LLM 对自身状态瞎猜）
-  {
-    std::string cwd = "unknown";
-    try { cwd = std::filesystem::current_path().string(); } catch (...) {}
-    system_prompt += "\n\n=== YOUR RUNTIME ENVIRONMENT (authoritative) ===";
-    system_prompt += "\n- Working directory: " + cwd;
-    system_prompt += "\n- Running mode: " + cfg_.mode;
-    system_prompt += "\n- Provider: " + normalize_provider(cfg_.provider) + ", Model: " + cfg_.model_name;
-    system_prompt += "\n=== END RUNTIME INFO ===";
-
-    // v0.40.1: 项目上下文自动注入
-    // 从当前工作目录向上查找 AGENTS.md / CLAUDE.md / .cursorrules，
-    // 注入前 2000 字符到 system_prompt，让模型了解项目约定。
-    {
-      auto try_inject = [&](const std::string& fname) -> bool {
-        std::ifstream f(fname);
-        if (!f.is_open()) return false;
-        std::string content((std::istreambuf_iterator<char>(f)),
-                             std::istreambuf_iterator<char>());
-        if (content.size() > 2000)
-          content = utf8_truncate(content, 2000) + "\n...(truncated)";
-        system_prompt += "\n\n=== PROJECT CONTEXT (" + fname + ") ===\n"
-                        + content + "\n=== END PROJECT CONTEXT ===";
-        return true;
-      };
-      // 查找优先级：AGENTS.md > CLAUDE.md > .cursorrules
-      for (const auto& name : {"AGENTS.md", "CLAUDE.md", ".cursorrules"}) {
-        if (try_inject(name)) break;
-      }
-    }
-  }
+  // ── system：选 base →（FC 专有）角色/工作流 → 共用 enrich → 组装 messages ──
+  matched_skill_ids_.clear();
+  std::string system_prompt;
+  std::string fact_role;
 
   if (use_native_fc) {
-    // 原生 function calling 模式：角色驱动 system prompt
     const bool is_dev = (std::getenv("THIN_AGENT_DEV_MODE") != nullptr &&
                          std::string(std::getenv("THIN_AGENT_DEV_MODE")) == "1");
-
-    // 模式 → 主 agent 角色名
     std::string default_role_name = is_dev ? "developer" : "worker";
-    const agent::AgentRole* default_role = role_mgr_ ? role_mgr_->find(default_role_name) : nullptr;
-
+    const agent::AgentRole* default_role =
+        role_mgr_ ? role_mgr_->find(default_role_name) : nullptr;
     if (default_role && !default_role->system_prompt.empty()) {
       system_prompt = default_role->system_prompt;
+      fact_role = default_role->name;
+    } else if (ctx.use_zh_progress) {
+      system_prompt = "你是 thin_agent，用中文回复，简洁专业。";
     } else {
-      // 兜底（不应该走到这里）
-      if (ctx.use_zh_progress)
-        system_prompt = "你是 thin_agent，用中文回复，简洁专业。";
-      else
-        system_prompt = "You are thin_agent. Reply in the same language as the user. Be concise and professional.";
+      system_prompt =
+          "You are thin_agent. Reply in the same language as the user. "
+          "Be concise and professional.";
     }
-
-    // 注入当前工作流（dev 模式下替换默认构建步骤）
     if (is_dev) {
       auto wf = WorkflowManager::instance().current();
-      system_prompt = WorkflowManager::instance().inject_into_system_prompt(system_prompt, wf);
-    }
-
-    // 注入技能信息
-    std::string skill_info = skill_registry_.build_skill_prompt_text();
-
-    // v0.27.5: 注入持久记忆冷冻快照（热路径：system/* + user/* + role/<current_role>/*）
-    if (fact_store_) {
-      std::string current_role = default_role ? default_role->name : "";
-      std::string mem_block = fact_store_->hot_snapshot(current_role, 4000);
-      if (!mem_block.empty()) {
-        system_prompt += "\n\n" + mem_block;
-      }
-    }
-    // v0.29.0: 自动 KB 注入 — 从用户输入提取关键词查询知识库
-    if (kb_searcher_ && !ctx.text.empty()) {
-      auto kb_results = kb_searcher_->search(ctx.text, 3);
-      if (kb_results.is_array() && !kb_results.empty()) {
-        std::string kb_context;
-        for (const auto& r : kb_results) {
-          std::string key = r.value("key", r.value("title", ""));
-          std::string val = r.value("content", r.value("snippet", r.dump()));
-          kb_context += "- " + key + ": " + utf8_truncate(val, 300) + "\n";
-        }
-        if (!kb_context.empty()) {
-          system_prompt += "\n\n=== KNOWLEDGE BASE CONTEXT ===\n"
-                          + kb_context + "=== END KB CONTEXT ===";
-        }
-      }
-    }
-    // v0.38.0: 语义记忆自动注入 — 用当前用户输入召回相关历史记忆
-    if (memory_manager_ && !ctx.text.empty()) {
-      std::string mem_ctx = memory_manager_->build_context(ctx.text, 3);
-      if (!mem_ctx.empty()) {
-        system_prompt += "\n\n" + mem_ctx;
-      }
-    }
-    // v0.38.1: Skill 自进化注入 — 语义匹配历史成功技能
-    if (skill_manager_ && !ctx.text.empty()) {
-      auto matched = skill_manager_->match_skills(ctx.text, 3, 0.3f);
-      if (!matched.empty()) {
-        std::string skill_inj = agent::SkillManager::to_prompt_injection(matched);
-        if (!skill_inj.empty()) {
-          system_prompt += "\n\n" + skill_inj;
-          // 记住匹配到的技能 ID，任务成功后 increment_use
-          for (const auto& s : matched) matched_skill_ids_.push_back(s.id);
-        }
-      }
-    }
-    // v0.38.2: 注入 GoalManager + ErrorCorrectionStore（对齐子 Agent 路径）
-    if (goal_mgr_) {
-      std::string goal_ctx = goal_mgr_->to_prompt_injection();
-      if (!goal_ctx.empty()) system_prompt += "\n\n" + goal_ctx;
-    }
-    if (correction_store_) {
-      std::vector<std::string> known_tools;
-      for (const auto& t : agent::ToolRegistry::instance().all_tools())
-        known_tools.push_back(t.name);
-      std::string corr_ctx = correction_store_->to_prompt_injection(known_tools);
-      if (!corr_ctx.empty()) system_prompt += "\n\n" + corr_ctx;
-    }
-    if (!skill_info.empty()) {
-      system_prompt += "\n\nAVAILABLE SKILLS:\n" + skill_info;
+      system_prompt =
+          WorkflowManager::instance().inject_into_system_prompt(system_prompt, wf);
     }
   } else {
-    // 传统 pipeline JSON 模式：注入文本 skills
-    std::string skill_info = skill_registry_.build_skill_prompt_text();
-    if (!skill_info.empty()) {
-      system_prompt += "\n\nAVAILABLE SKILLS (you may plan multi-step tasks):\n" + skill_info;
-      system_prompt += "\nTo plan a multi-step task, include a \"task_pipeline\" array: "
-                       "{\"action\":\"tool_name\",\"params\":{...}, optional \"output\":\"var_name\"}. "
-                       "Reference upstream results as $var_name[N].field.";
-    }
+    system_prompt = cloud_strategist_system_prompt();
   }
 
-  // ── ③ 项目结构注入（dev 模式 + 已扫描）──
-  if (!project_structure_.empty()) {
-    system_prompt += "\n\n=== PROJECT STRUCTURE ===\n" + project_structure_ + "=== END PROJECT STRUCTURE ===\n";
+  enrich_shared_system_prompt(ctx, system_prompt, fact_role, /*offline=*/false);
+
+  // 非 FC：额外说明可用 pipeline JSON 规划（FC 走原生 tools schema）
+  if (!use_native_fc) {
+    system_prompt +=
+        "\nTo plan a multi-step task when tools are unavailable as functions, "
+        "include a \"task_pipeline\" array: "
+        "{\"action\":\"tool_name\",\"params\":{...}, optional \"output\":\"var_name\"}. "
+        "Reference upstream results as $var_name[N].field.";
   }
 
-  // ── 构建 messages：标准格式，历史作为独立 user/assistant 对 ──
-  std::vector<ChatMessage> messages;
-  messages.push_back(ChatMessage{"system", system_prompt});
-
-  // v0.29.0: 注入对话摘要（ConversationSummarizer 自动压缩后的缓存）
-  if (summarizer_) {
-    std::string summary_prefix = summarizer_->summary_prefix();
-    if (!summary_prefix.empty()) {
-      messages.push_back(ChatMessage{"system", summary_prefix});
-    }
-  }
-
-  // ① 会话历史（最近的 user/assistant 对，不包括当前消息）
-  // ctx.snapshot 的最后一条是当前用户消息，前面的才是历史
-  for (size_t i = 0; i + 1 < ctx.snapshot.size(); ++i) {
-    const auto& m = ctx.snapshot[i];
-    if (m.role == "user" || m.role == "assistant") {
-      messages.push_back(m);
-    }
-  }
-
-  // ② 工具结果缓存（最近 K 次调用）
-  {
-    std::lock_guard<std::mutex> lk(mu_);
-    if (!tool_result_cache_.empty()) {
-      std::string tool_ctx = "Recent tool results:\n";
-      for (const auto& e : tool_result_cache_) {
-        tool_ctx += "[" + e.action + "] " + e.params_summary + ": " + e.result_truncated + "\n";
-      }
-      messages.push_back(ChatMessage{"user", tool_ctx});
-    }
-  }
-
-  // 当前用户消息
-  {
-    ChatMessage umsg{"user", ctx.text};
-    if (!ctx.image_base64.empty()) {
-      umsg.image_base64 = ctx.image_base64;
-    }
-    messages.push_back(umsg);
-  }
+  std::vector<ChatMessage> messages =
+      assemble_chat_messages(ctx, std::move(system_prompt));
 
   chat_push_thinking(ctx, 3, "deep_reasoning");
 
@@ -2946,16 +3045,213 @@ nlohmann::json AgentService::chat_cloud_precheck(ChatContext& ctx,
 
   if (cfg_.mode == "offline") {
     // 离线模式：走 HybridRouter (TemplateModel → GgufModel → fallback)
-    thin_agent::local::HybridRouter local_router;
+    // 已选本地 GGUF：生成预算跟模型 n_ctx 走（不是按生成长度动态分配 KV）
+    // KV 在 load() 时按 n_ctx 一次性定好；这里只设「最多生成多少 token」
+    // 多轮：优先 GgufModel::infer_*_turns，把 session snapshot 做成 chat turns
+    // （旧路径只传 ctx.text，模型看不到上一轮澄清，会「失忆」）
+    thin_agent::local::HybridRouter::Config hr_cfg;
+    const std::string pref =
+        thin_agent::local::ModelPool::instance().preferred_chat();
+    const bool prefer_gguf = !pref.empty();
+    int gen_budget = 4096;
+    int model_ctx = 0;
+    thin_agent::local::GgufModel* gguf = nullptr;
+    if (prefer_gguf) {
+      if (auto* m = thin_agent::local::ModelPool::instance().find_by_name(pref)) {
+        if (auto* g = dynamic_cast<thin_agent::local::GgufModel*>(m)) {
+          gguf = g;
+          model_ctx = g->n_ctx() > 0 ? g->n_ctx() : g->n_ctx_train();
+        }
+      }
+      // 留约 1/4 给 prompt；生成侧最多用到窗口 3/4（Aurum 32k → ~24k）
+      if (model_ctx > 0) {
+        gen_budget = std::max(4096, (model_ctx * 3) / 4);
+      }
+      hr_cfg.simple_max_tokens = std::min(2048, gen_budget);
+      hr_cfg.moderate_max_tokens = std::min(8192, gen_budget);
+      hr_cfg.complex_max_tokens = gen_budget;
+    }
+    thin_agent::local::HybridRouter local_router(hr_cfg);
     thin_agent::local::CascadeResult local_result;
-    if (ctx.on_chunk) {
-      local_result = local_router.route_stream("chat", ctx.text, ctx.on_chunk, 256);
+    const int local_max_tokens = prefer_gguf ? gen_budget : 256;
+
+    auto pick_tokens = [&]() {
+      using TC = thin_agent::local::TaskComplexity;
+      const auto c =
+          thin_agent::local::HybridRouter::classify_complexity(ctx.text);
+      int t = hr_cfg.moderate_max_tokens;
+      if (c == TC::simple) t = hr_cfg.simple_max_tokens;
+      else if (c == TC::complex) t = hr_cfg.complex_max_tokens;
+      if (local_max_tokens > 0) t = std::min(t, local_max_tokens);
+      return t;
+    };
+
+    auto complexity_prefix = [&]() -> const char* {
+      using TC = thin_agent::local::TaskComplexity;
+      const auto c =
+          thin_agent::local::HybridRouter::classify_complexity(ctx.text);
+      if (c == TC::simple) return "simple:";
+      if (c == TC::complex) return "complex:";
+      return "moderate:";
+    };
+
+    if (gguf && (gguf->is_loaded() || gguf->load())) {
+      // 与在线同一套 assemble_chat_messages；有工具时走本地 FC 循环
+      const auto messages =
+          assemble_chat_messages(ctx, build_offline_system_prompt(ctx));
+      const int tokens = pick_tokens();
+      const auto t0 = std::chrono::steady_clock::now();
+
+      nlohmann::json offline_tools = skill_registry_.build_tools_schema();
+      CloudChatResult local_fc;
+      bool tried_fc = false;
+      if (offline_tools.is_array() && !offline_tools.empty()) {
+        tried_fc = true;
+        auto gen = [gguf](const std::vector<ChatMessage>& msgs,
+                          int mt) -> std::string {
+          return gguf->infer_turns(messages_to_gguf_turns(msgs), mt);
+        };
+        auto abort_cb = [this, &ctx]() {
+          return check_and_clear_abort(ctx.session_id);
+        };
+        auto approval_cb = [this, &ctx, tokens](const std::string& tool_name,
+                                                const nlohmann::json& args) -> bool {
+          if (!g_cron_filter.is_null()) {
+            g_fc_dangerous_denied = true;
+            return false;
+          }
+          PendingApproval pa;
+          pa.tool_name = tool_name;
+          pa.tool_args = args.dump();
+          pa.created_at = std::chrono::steady_clock::now();
+          pa.user_text = ctx.text;
+          pa.local_gguf = true;
+          pa.gen_budget = tokens;
+          {
+            std::lock_guard<std::mutex> lk(mu_);
+            fc_pending_approvals_[ctx.session_id] = std::move(pa);
+          }
+          if (ctx.on_event) {
+            ctx.on_event("approval_request",
+                         {{"tool", tool_name},
+                          {"args", utf8_truncate(args.dump(), 300)},
+                          {"session_id", ctx.session_id}});
+          }
+          return false;
+        };
+        local_fc = run_local_tool_loop(
+            gen, messages, offline_tools, skill_registry_, tokens,
+            /*max_iterations=*/12, ctx.use_zh_progress, ctx.on_event,
+            ctx.on_chunk, abort_cb, approval_cb);
+      }
+
+      if (tried_fc && local_fc.needs_approval) {
+        // 与云端一致：把消息快照写回 pending，供 chat_approve 续跑
+        if (!local_fc.fc_messages_snapshot.empty()) {
+          std::lock_guard<std::mutex> lk(mu_);
+          auto pit = fc_pending_approvals_.find(ctx.session_id);
+          if (pit != fc_pending_approvals_.end()) {
+            pit->second.fc_messages = local_fc.fc_messages_snapshot;
+            pit->second.fc_iterations_used = local_fc.fc_iterations_used;
+            pit->second.local_gguf = true;
+            pit->second.gen_budget = tokens;
+          }
+        }
+        return {
+            {"type", "chat_result"},
+            {"mode_used", "offline-fc"},
+            {"intent_backend", "local-function-calling"},
+            {"memory_size", ctx.snapshot.size()},
+            {"needs_approval", true},
+            {"pending_tool_name", local_fc.pending_tool_name},
+            {"pending_tool_args", local_fc.pending_tool_args},
+            {"decision",
+             {{"route", std::string(complexity_prefix()) + gguf->name()},
+              {"reason", "offline_fc_hitl"},
+              {"policy", "approve"}}},
+            {"tool_calls", nlohmann::json::array()},
+            {"text", local_fc.text},
+            {"n_ctx", model_ctx > 0 ? model_ctx : 0},
+        };
+      }
+
+      if (tried_fc && local_fc.ok && !local_fc.text.empty()) {
+        nlohmann::json usage = {
+            {"latency_us",
+             std::chrono::duration_cast<std::chrono::microseconds>(
+                 std::chrono::steady_clock::now() - t0)
+                 .count()},
+            {"model", std::string(complexity_prefix()) + gguf->name()},
+            {"fc_iterations", local_fc.fc_iterations_used},
+        };
+        if (model_ctx > 0) usage["n_ctx"] = model_ctx;
+        nlohmann::json tool_calls = nlohmann::json::array();
+        for (const auto& tn : local_fc.tool_names_used) {
+          tool_calls.push_back({{"tool", tn}});
+        }
+        return {
+            {"type", "chat_result"},
+            {"mode_used", "offline-fc"},
+            {"intent_backend", "local-function-calling"},
+            {"memory_size", ctx.snapshot.size()},
+            {"decision",
+             {{"route", std::string(complexity_prefix()) + gguf->name()},
+              {"reason", local_fc.tool_names_used.empty()
+                             ? "offline_fc_text"
+                             : "offline_fc_tools"},
+              {"policy", "execute"}}},
+            {"tool_calls", tool_calls},
+            {"text", utf8_sanitize(local_fc.text)},
+            {"usage", usage},
+            {"n_ctx", model_ctx > 0 ? model_ctx : 0},
+            {"aborted", local_fc.aborted},
+        };
+      }
+
+      // 无工具 / FC 未产出：纯多轮聊天
+      const auto turns = messages_to_gguf_turns(messages);
+      if (ctx.on_chunk) {
+        std::string acc;
+        gguf->infer_stream_turns(
+            turns,
+            [&](const std::string& tok, bool done) {
+              if (!tok.empty()) acc += tok;
+              ctx.on_chunk(tok, done);
+            },
+            tokens);
+        local_result.ok = !acc.empty();
+        local_result.output = std::move(acc);
+      } else {
+        local_result.output = gguf->infer_turns(turns, tokens);
+        local_result.ok = !local_result.output.empty();
+      }
+      local_result.model_used =
+          std::string(complexity_prefix()) + gguf->name();
+      local_result.latency_us =
+          std::chrono::duration_cast<std::chrono::microseconds>(
+              std::chrono::steady_clock::now() - t0)
+              .count();
     } else {
-      local_result = local_router.route("chat", ctx.text, 256);
+      // 无 GGUF 时 HybridRouter 也吃同一套 messages（压成纯文本）
+      const auto messages =
+          assemble_chat_messages(ctx, build_offline_system_prompt(ctx));
+      std::string flat;
+      for (const auto& m : messages) {
+        flat += m.role;
+        flat += ": ";
+        flat += m.content;
+        flat += "\n\n";
+      }
+      if (ctx.on_chunk) {
+        local_result = local_router.route_stream("chat", flat, ctx.on_chunk,
+                                                 local_max_tokens);
+      } else {
+        local_result = local_router.route("chat", flat, local_max_tokens);
+      }
     }
     std::string offline_text;
     if (local_result.ok && !local_result.output.empty()) {
-      offline_text = local_result.output;
+      offline_text = utf8_sanitize(local_result.output);
     } else {
       offline_text = render_template(
           policy_text("cloud.offline_local_fallback",
@@ -2963,6 +3259,11 @@ nlohmann::json AgentService::chat_cloud_precheck(ChatContext& ctx,
                                   "[offline] 当前离线模式。可执行本地动作。输入回显：{ctx.text}")),
           {{"text", ctx.text}});
     }
+    nlohmann::json usage = {
+        {"latency_us", local_result.latency_us},
+        {"model", local_result.ok ? local_result.model_used : "offline_fallback"},
+    };
+    if (model_ctx > 0) usage["n_ctx"] = model_ctx;
     return {
         {"type", "chat_result"},
         {"mode_used", "offline"},
@@ -2975,13 +3276,49 @@ nlohmann::json AgentService::chat_cloud_precheck(ChatContext& ctx,
         {"decision_trace", nlohmann::json::array({{{"layer", "rules"}, {"input", ctx.text},
                                                     {"output", local_result.ok ? local_result.model_used : "offline_fallback"}}})},
         {"text", offline_text},
+        {"usage", usage},
+        {"n_ctx", model_ctx > 0 ? model_ctx : 0},
     };
   }
 
   if (key_state == "missing") {
     thin_agent::local::HybridRouter local_router;
     thin_agent::local::CascadeResult local_result;
-    if (ctx.on_chunk) {
+    // 与 offline 一致：有 GGUF 时带上多轮历史，避免「缺 key 降级」也失忆
+    thin_agent::local::GgufModel* gguf_fb = nullptr;
+    const std::string pref_fb =
+        thin_agent::local::ModelPool::instance().preferred_chat();
+    if (!pref_fb.empty()) {
+      if (auto* m = thin_agent::local::ModelPool::instance().find_by_name(pref_fb)) {
+        gguf_fb = dynamic_cast<thin_agent::local::GgufModel*>(m);
+      }
+    }
+    if (gguf_fb && (gguf_fb->is_loaded() || gguf_fb->load())) {
+      const auto messages =
+          assemble_chat_messages(ctx, build_offline_system_prompt(ctx));
+      const auto turns = messages_to_gguf_turns(messages);
+      const auto t0 = std::chrono::steady_clock::now();
+      if (ctx.on_chunk) {
+        std::string acc;
+        gguf_fb->infer_stream_turns(
+            turns,
+            [&](const std::string& tok, bool done) {
+              if (!tok.empty()) acc += tok;
+              ctx.on_chunk(tok, done);
+            },
+            256);
+        local_result.ok = !acc.empty();
+        local_result.output = std::move(acc);
+      } else {
+        local_result.output = gguf_fb->infer_turns(turns, 256);
+        local_result.ok = !local_result.output.empty();
+      }
+      local_result.model_used = gguf_fb->name();
+      local_result.latency_us =
+          std::chrono::duration_cast<std::chrono::microseconds>(
+              std::chrono::steady_clock::now() - t0)
+              .count();
+    } else if (ctx.on_chunk) {
       local_result = local_router.route_stream("chat", ctx.text, ctx.on_chunk, 256);
     } else {
       local_result = local_router.route("chat", ctx.text, 256);

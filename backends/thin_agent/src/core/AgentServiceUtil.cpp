@@ -2106,6 +2106,257 @@ ToolExecResult execute_one_tool(
 using ApprovalChecker = std::function<bool(const std::string& tool_name,
                                             const nlohmann::json& args)>;
 
+namespace {
+
+std::string extract_json_object_ish(const std::string& raw) {
+  const auto fence = raw.find("```");
+  if (fence != std::string::npos) {
+    auto start = raw.find('{', fence);
+    auto end = raw.rfind('}');
+    if (start != std::string::npos && end != std::string::npos && end > start) {
+      return raw.substr(start, end - start + 1);
+    }
+  }
+  auto start = raw.find('{');
+  auto end = raw.rfind('}');
+  if (start != std::string::npos && end != std::string::npos && end > start) {
+    return raw.substr(start, end - start + 1);
+  }
+  return raw;
+}
+
+std::string tools_schema_to_local_prompt(const nlohmann::json& tools) {
+  if (!tools.is_array() || tools.empty()) return {};
+  std::ostringstream os;
+  os << "\n\n## Local tool use protocol\n"
+     << "You can call tools. When you need a tool, reply with ONLY JSON:\n"
+     << "{\"tool_calls\":[{\"name\":\"<tool>\",\"params\":{...}}]}\n"
+     << "When finished, reply with normal assistant text OR:\n"
+     << "{\"tool_calls\":[],\"final_answer\":\"<reply>\"}\n"
+     << "Available tools:\n";
+  for (const auto& t : tools) {
+    if (!t.is_object()) continue;
+    const auto& fn = t.contains("function") ? t["function"] : t;
+    if (!fn.is_object()) continue;
+    const std::string name = fn.value("name", "");
+    if (name.empty()) continue;
+    os << "- " << name;
+    if (fn.contains("description") && fn["description"].is_string()) {
+      os << ": " << utf8_truncate(fn["description"].get<std::string>(), 160);
+    }
+    os << "\n";
+  }
+  return os.str();
+}
+
+/// 从本地模型自由文本中解析 tool_calls（兼容 OpenAI 包一层 / 裸 JSON）。
+std::vector<CloudLlmClient::ParsedToolCall> parse_local_tool_calls(
+    const std::string& raw, std::string* final_answer_out) {
+  std::vector<CloudLlmClient::ParsedToolCall> out;
+  if (final_answer_out) final_answer_out->clear();
+
+  // 1) 若整段是 OpenAI chat.completion JSON
+  auto native = CloudLlmClient::parse_tool_calls(raw);
+  if (!native.empty()) return native;
+
+  std::string js = extract_json_object_ish(raw);
+  nlohmann::json parsed;
+  try {
+    parsed = nlohmann::json::parse(js);
+  } catch (...) {
+    return out;
+  }
+
+  if (parsed.contains("choices")) {
+    native = CloudLlmClient::parse_tool_calls(js);
+    if (!native.empty()) return native;
+  }
+
+  if (parsed.contains("final_answer") && parsed["final_answer"].is_string() &&
+      final_answer_out) {
+    *final_answer_out = parsed["final_answer"].get<std::string>();
+  }
+
+  if (!parsed.contains("tool_calls") || !parsed["tool_calls"].is_array()) {
+    return out;
+  }
+  int idx = 0;
+  for (const auto& tc : parsed["tool_calls"]) {
+    if (!tc.is_object()) continue;
+    CloudLlmClient::ParsedToolCall ptc;
+    ptc.id = "local_" + std::to_string(idx++);
+    if (tc.contains("function") && tc["function"].is_object()) {
+      ptc.name = tc["function"].value("name", "");
+      const auto& args = tc["function"].value("arguments", nlohmann::json::object());
+      if (args.is_string()) {
+        try { ptc.arguments = nlohmann::json::parse(args.get<std::string>()); }
+        catch (...) { ptc.arguments = nlohmann::json::object(); }
+      } else if (args.is_object()) {
+        ptc.arguments = args;
+      }
+    } else {
+      ptc.name = tc.value("name", "");
+      if (tc.contains("params") && tc["params"].is_object())
+        ptc.arguments = tc["params"];
+      else if (tc.contains("arguments") && tc["arguments"].is_object())
+        ptc.arguments = tc["arguments"];
+      else
+        ptc.arguments = nlohmann::json::object();
+    }
+    if (!ptc.name.empty()) out.push_back(std::move(ptc));
+  }
+  return out;
+}
+
+}  // namespace
+
+CloudChatResult run_local_tool_loop(
+    std::function<std::string(const std::vector<ChatMessage>&, int)> generate,
+    std::vector<ChatMessage> messages,
+    const nlohmann::json& tools_schema,
+    SkillRegistry& skill_registry,
+    int max_tokens_per_turn,
+    int max_iterations,
+    bool use_zh_progress,
+    EventCallback on_event,
+    StreamCallback on_chunk,
+    std::function<bool()> abort_checker,
+    ApprovalChecker approval_checker) {
+  CloudChatResult out;
+  if (!generate) {
+    out.error = "local_generate_missing";
+    return out;
+  }
+
+  const std::string tools_prompt = tools_schema_to_local_prompt(tools_schema);
+  if (!tools_prompt.empty()) {
+    bool injected = false;
+    for (auto& m : messages) {
+      if (m.role == "system") {
+        m.content += tools_prompt;
+        injected = true;
+        break;
+      }
+    }
+    if (!injected) {
+      messages.insert(messages.begin(), ChatMessage{"system", tools_prompt});
+    }
+  }
+
+  std::string tool_results_log;
+  const int iters = std::max(1, max_iterations);
+  for (int iter = 0; iter < iters; ++iter) {
+    if (abort_checker && abort_checker()) {
+      out.ok = true;
+      out.aborted = true;
+      out.http_status = 200;
+      out.text = tool_results_log.empty()
+                     ? "已中断（用户停止）。"
+                     : ("已中断（用户停止）。\n\n已完成的操作：\n" + tool_results_log);
+      out.fc_iterations_used = iter;
+      return out;
+    }
+    if (on_event) {
+      on_event("thinking",
+               {{"tier", 3},
+                {"msg", progress_msg(iter == 0 ? "deep_reasoning" : "summarizing",
+                                     use_zh_progress)}});
+    }
+
+    std::string raw = generate(messages, max_tokens_per_turn);
+    out.fc_iterations_used = iter + 1;
+    if (raw.empty()) {
+      if (!tool_results_log.empty()) {
+        out.ok = true;
+        out.http_status = 200;
+        out.text = "Partial results (local model empty after tools):\n" +
+                   tool_results_log;
+        return out;
+      }
+      out.error = "local_empty_response";
+      return out;
+    }
+
+    std::string final_answer;
+    auto tool_calls = parse_local_tool_calls(raw, &final_answer);
+    if (tool_calls.empty()) {
+      out.ok = true;
+      out.http_status = 200;
+      out.text = !final_answer.empty() ? final_answer : raw;
+      if (on_chunk) {
+        on_chunk(out.text, false);
+        on_chunk("", true);
+      }
+      return out;
+    }
+
+    // HITL：任一危险工具触发审批（与云端 FC 一致）
+    for (const auto& tc : tool_calls) {
+      if (tool_risk_of(tc.name, tc.arguments) == ToolRisk::Dangerous &&
+          approval_checker) {
+        const bool approved = approval_checker(tc.name, tc.arguments);
+        if (!approved) {
+          out.ok = true;
+          out.http_status = 200;
+          out.needs_approval = true;
+          out.pending_tool_name = tc.name;
+          out.pending_tool_args = tc.arguments.dump();
+          out.fc_messages_snapshot = messages;
+          ChatMessage pause_msg;
+          pause_msg.role = "assistant";
+          pause_msg.content = raw;
+          out.fc_messages_snapshot.push_back(std::move(pause_msg));
+          out.text = "⏸️ 需要确认危险操作：" + tc.name;
+          out.tool_names_used.push_back(tc.name);
+          return out;
+        }
+      }
+    }
+
+    ChatMessage assistant_msg;
+    assistant_msg.role = "assistant";
+    assistant_msg.content = raw;
+    messages.push_back(assistant_msg);
+
+    for (const auto& tc : tool_calls) {
+      if (on_event) {
+        on_event("tool_call",
+                 {{"name", tc.name},
+                  {"args", utf8_truncate(tc.arguments.dump(), 200)}});
+      }
+      auto tr = execute_one_tool(tc, skill_registry, on_event, use_zh_progress);
+      out.tool_names_used.push_back(tc.name);
+      tool_results_log +=
+          "- " + tc.name + ": " + utf8_truncate(tr.output, 240) + "\n";
+
+      ChatMessage tool_msg;
+      tool_msg.role = "tool";
+      tool_msg.name = tc.name;
+      tool_msg.tool_call_id = tc.id.empty() ? ("local_" + tc.name) : tc.id;
+      tool_msg.content = tr.output;
+      messages.push_back(std::move(tool_msg));
+
+      // 本地 chat template 对 tool role 支持不一：再塞一条 user 观察，稳妥
+      ChatMessage obs;
+      obs.role = "user";
+      obs.content = std::string("[tool_result ") + tc.name + "]\n" +
+                    utf8_truncate(tr.output, 4000);
+      messages.push_back(std::move(obs));
+    }
+  }
+
+  out.ok = true;
+  out.http_status = 200;
+  out.text = tool_results_log.empty()
+                 ? "已达到本地工具循环上限，请继续提问或缩小任务范围。"
+                 : ("已达到工具循环上限。已完成：\n" + tool_results_log);
+  if (on_chunk) {
+    on_chunk(out.text, false);
+    on_chunk("", true);
+  }
+  return out;
+}
+
 /// ── Native function calling loop ──
 /// Replaces the legacy pipeline JSON pre-planning with streaming
 /// OpenAI-compatible function calling. The LLM calls tools directly,

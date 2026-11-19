@@ -544,7 +544,8 @@ nlohmann::json AgentService::handle_chat_approve(const std::string& session_id,
       // ── v0.52.2: 续跑 FC 循环（快照 + 工具结果）────────────
       if (!pa.fc_messages.empty()) {
         log_event("hitl", LogLevel::Info, "FC resume after approval",
-                  {{"tool", pa.tool_name}, {"msgs", pa.fc_messages.size()}});
+                  {{"tool", pa.tool_name}, {"msgs", pa.fc_messages.size()},
+                   {"local_gguf", pa.local_gguf}});
 
         std::vector<ChatMessage> resume_msgs = pa.fc_messages;
         // 工具结果作为 tool 消息 append（协议：与 assistant tool_calls 配对）
@@ -554,12 +555,21 @@ nlohmann::json AgentService::handle_chat_approve(const std::string& session_id,
         tool_msg.name = tc.name;
         tool_msg.content = tr.output.empty() ? "(无输出)" : tr.output;
         resume_msgs.push_back(std::move(tool_msg));
+        // 离线模板对 tool role 支持不一：再补一条 user 观察（与 run_local_tool_loop 一致）
+        if (pa.local_gguf) {
+          ChatMessage obs;
+          obs.role = "user";
+          obs.content = std::string("[tool_result ") + tc.name + "]\n" +
+                        utf8_truncate(tr.output.empty() ? "(无输出)" : tr.output, 4000);
+          resume_msgs.push_back(std::move(obs));
+        }
 
         // 重建续跑上下文（与主路径同源：tools schema / key / 审批回调）
         const nlohmann::json tools_schema = skill_registry_.build_tools_schema();
         const std::string api_key = resolve_api_key(
             credential_pool_.get(), cfg_.api_key_env, cfg_.provider);
-        auto resume_approval_cb = [this, session_id](
+        auto resume_approval_cb = [this, session_id, local = pa.local_gguf,
+                                   budget = pa.gen_budget](
             const std::string& tool_name, const nlohmann::json& tool_args) -> bool {
           // 同款审批回调（含 v0.52.1 cron 无人值守拒绝）
           if (!g_cron_filter.is_null()) {
@@ -574,6 +584,8 @@ nlohmann::json AgentService::handle_chat_approve(const std::string& session_id,
           npa.tool_args = tool_args.dump();
           npa.created_at = std::chrono::steady_clock::now();
           npa.user_text = "（续跑中触发）" + tool_name;
+          npa.local_gguf = local;
+          npa.gen_budget = budget;
           {
             std::lock_guard<std::mutex> lk2(mu_);
             fc_pending_approvals_[session_id] = std::move(npa);
@@ -583,12 +595,63 @@ nlohmann::json AgentService::handle_chat_approve(const std::string& session_id,
           return false;
         };
 
-        const int remaining_iters = std::max(
-            1, 30 - pa.fc_iterations_used);  // 迭代预算=原上限-已用
-        auto resumed = run_function_calling_loop(
-            cfg_, api_key, resume_msgs, tools_schema,
-            session_id, "", nullptr, skill_registry_,
-            1, remaining_iters, true, nullptr, nullptr, resume_approval_cb);
+        CloudChatResult resumed;
+        if (pa.local_gguf) {
+          // 离线：与主路径同一套 run_local_tool_loop 续跑
+          thin_agent::local::GgufModel* gguf = nullptr;
+          const std::string pref =
+              thin_agent::local::ModelPool::instance().preferred_chat();
+          if (!pref.empty()) {
+            if (auto* m =
+                    thin_agent::local::ModelPool::instance().find_by_name(pref)) {
+              gguf = dynamic_cast<thin_agent::local::GgufModel*>(m);
+            }
+          }
+          if (!gguf || !(gguf->is_loaded() || gguf->load())) {
+            return {
+                {"type", "chat_result"},
+                {"text", oss.str() + "\n\n（离线续跑失败：本地 GGUF 未就绪）"},
+                {"decision",
+                 {{"route", "offline_fc"},
+                  {"reason", "hitl_approved_resume_no_gguf"}}},
+                {"tool_calls", nlohmann::json::array({{{"tool", pa.tool_name}}})},
+            };
+          }
+          const int remaining_iters = std::max(1, 12 - pa.fc_iterations_used);
+          const int budget = pa.gen_budget > 0 ? pa.gen_budget : 2048;
+          auto* gguf_ptr = gguf;
+          auto gen = [gguf_ptr](const std::vector<ChatMessage>& msgs,
+                                int mt) -> std::string {
+            std::vector<thin_agent::local::GgufModel::ChatTurn> turns;
+            turns.reserve(msgs.size());
+            for (const auto& m : msgs) {
+              if (m.role != "system" && m.role != "user" &&
+                  m.role != "assistant" && m.role != "tool")
+                continue;
+              std::string content = m.content;
+              if (m.role == "tool") {
+                turns.emplace_back(
+                    "user",
+                    std::string("[tool_result ") +
+                        (m.name.empty() ? "tool" : m.name) + "]\n" + content);
+              } else {
+                turns.emplace_back(m.role, std::move(content));
+              }
+            }
+            return gguf_ptr->infer_turns(turns, mt);
+          };
+          resumed = run_local_tool_loop(
+              gen, resume_msgs, tools_schema, skill_registry_, budget,
+              remaining_iters, true, nullptr, nullptr, nullptr,
+              resume_approval_cb);
+        } else {
+          const int remaining_iters = std::max(
+              1, 30 - pa.fc_iterations_used);  // 迭代预算=原上限-已用
+          resumed = run_function_calling_loop(
+              cfg_, api_key, resume_msgs, tools_schema,
+              session_id, "", nullptr, skill_registry_,
+              1, remaining_iters, true, nullptr, nullptr, resume_approval_cb);
+        }
 
         // v0.52.2: 续跑中二次暂停 — 快照回填 pending（与主路径同款），
         // 下一次 approve 仍可续跑（多级危险任务不降级为单工具语义）
@@ -599,11 +662,14 @@ nlohmann::json AgentService::handle_chat_approve(const std::string& session_id,
             pit2->second.fc_messages = resumed.fc_messages_snapshot;
             pit2->second.fc_iterations_used =
                 pa.fc_iterations_used + resumed.fc_iterations_used;
+            pit2->second.local_gguf = pa.local_gguf;
+            pit2->second.gen_budget = pa.gen_budget;
           }
           return {
               {"type", "chat_result"},
               {"text", oss.str() + "\n\n⏸️ 续跑中触发新的危险操作，等待确认。"},
-              {"decision", {{"route", "fc_loop"}, {"reason", "hitl_approved_resumed_pending"}}},
+              {"decision", {{"route", pa.local_gguf ? "offline_fc" : "fc_loop"},
+                            {"reason", "hitl_approved_resumed_pending"}}},
           };
         }
         // v0.53.81: 续跑收敛——未再触发审批即本次 run 终止（第一出口；
@@ -616,7 +682,8 @@ nlohmann::json AgentService::handle_chat_approve(const std::string& session_id,
           return {
               {"type", "chat_result"},
               {"text", oss.str() + "\n\n── 续跑结果 ──\n" + resumed.text},
-              {"decision", {{"route", "fc_loop"}, {"reason", "hitl_approved_resumed"}}},
+              {"decision", {{"route", pa.local_gguf ? "offline_fc" : "fc_loop"},
+                            {"reason", "hitl_approved_resumed"}}},
               {"tool_calls", nlohmann::json::array({{{"tool", pa.tool_name}}})},
           };
         }
@@ -625,7 +692,8 @@ nlohmann::json AgentService::handle_chat_approve(const std::string& session_id,
             {"type", "chat_result"},
             {"text", oss.str() + "\n\n（续跑未完成：" +
                  (resumed.error.empty() ? "无最终文本" : resumed.error) + "，可发\"继续\"驱动）"},
-            {"decision", {{"route", "fc_loop"}, {"reason", "hitl_approved_resume_failed"}}},
+            {"decision", {{"route", pa.local_gguf ? "offline_fc" : "fc_loop"},
+                          {"reason", "hitl_approved_resume_failed"}}},
             {"tool_calls", nlohmann::json::array({{{"tool", pa.tool_name}}})},
         };
       }
@@ -2756,7 +2824,16 @@ nlohmann::json AgentService::handle_request(const std::string& session_id, const
     return finish(switch_channel(profile));
   }
 
-  // v0.9.2: 热切换本地模型
+  // 进程内本地 GGUF 列表 / 热切换（UI 选 Aurum / Qwen 等）
+  if (type == "list_local_models") {
+    return finish(list_local_models());
+  }
+  if (type == "switch_local_model") {
+    const std::string name = req.value("name", req.value("model", ""));
+    return finish(switch_local_model(name));
+  }
+
+  // v0.9.2: 按路径重载某一已注册模型的 GGUF 文件
   if (type == "switch_model") {
     const std::string model_name = req.value("model", "");
     const std::string gguf_path = req.value("gguf_path", "");
@@ -2764,6 +2841,9 @@ nlohmann::json AgentService::handle_request(const std::string& session_id, const
       return finish({{"type", "switch_model_result"}, {"ok", false}, {"error", "missing model or gguf_path"}});
     }
     bool ok = thin_agent::local::ModelPool::instance().reload(model_name, gguf_path);
+    if (ok) {
+      thin_agent::local::ModelPool::instance().set_preferred_chat(model_name, true);
+    }
     return finish({{"type", "switch_model_result"}, {"ok", ok}, {"model", model_name}, {"gguf_path", gguf_path}});
   }
 

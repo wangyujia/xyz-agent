@@ -17,14 +17,17 @@ TaskComplexity HybridRouter::classify_complexity(const std::string& input) {
   if (input.size() < 30) return TaskComplexity::simple;
   if (input.size() > 300) return TaskComplexity::complex;
 
-  // 代码/技术关键词
+  // 代码/技术关键词（含中文：否则「写个 bfs 代码」会落 moderate 被短截）
   static constexpr const char* complex_hints[] = {
     "code", "function", "class", "debug", "fix", "implement",
     "algorithm", "optimize", "refactor", "compile", "build",
     "error", "exception", "crash", "memory", "performance",
     "async", "thread", "concurrent", "lock", "deadlock",
-    "recursive", "algorithm", "data structure", "binary",
-    "explain", "analyze", "compare", "design", "architecture"
+    "recursive", "data structure", "binary",
+    "explain", "analyze", "compare", "design", "architecture",
+    "代码", "编程", "程序", "算法", "函数", "实现", "调试",
+    "编译", "重构", "接口", "类", "指针", "线程", "并发",
+    "bfs", "dfs", "leetcode", "c++", "cpp", "python", "java"
   };
   for (const auto* hint : complex_hints) {
     if (input.find(hint) != std::string::npos) {

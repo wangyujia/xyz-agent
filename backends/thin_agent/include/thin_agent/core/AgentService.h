@@ -188,6 +188,12 @@ class AgentService {
   /// 运行时热切换模型通道：只替换 cfg_，不调用 thin_agent_set_profile。
   nlohmann::json switch_channel(const std::string& channel);
 
+  /// 列出进程内可切换的本地 GGUF（ModelPool），供 UI 选模型。
+  nlohmann::json list_local_models() const;
+
+  /// 热切换当前聊天首选本地模型（卸载其它 GGUF 并加载目标）。
+  nlohmann::json switch_local_model(const std::string& name);
+
   /// 当前逻辑通道名（如 lmstudio_demo）。
   std::string active_channel() const;
 
@@ -291,6 +297,23 @@ class AgentService {
                                                const std::string& api_key,
                                                const std::string& key_state,
                                                const std::string& provider);
+
+  /// 与在线路径同一套喂给：system + 对话摘要 + snapshot 历史 + 工具缓存 + 当前 user。
+  /// 离线 GGUF / 云端 API 都走这里，只在推理后端分叉。
+  std::vector<ChatMessage> assemble_chat_messages(ChatContext& ctx,
+                                                  std::string system_prompt);
+
+  /// 共用 system 上下文注入（runtime / 项目文件 / FactStore / KB / 记忆 /
+  /// skill 匹配 / Goal / 纠错 / skills 文本 / 项目结构）。
+  /// 在线 FC 与离线在选定 base prompt 后都走这里，避免两套分叉逻辑。
+  /// @param fact_role 传给 FactStore::hot_snapshot 的角色名（可空）
+  /// @param offline   true 时 runtime 标注 local-gguf
+  void enrich_shared_system_prompt(ChatContext& ctx, std::string& system_prompt,
+                                   const std::string& fact_role = "",
+                                   bool offline = false);
+
+  /// 离线模型用的 system：连续性人设 + enrich_shared_system_prompt。
+  std::string build_offline_system_prompt(ChatContext& ctx);
 
   /// v0.50.0: 任务/动作/gate 意图域（原 handle_chat 段 F）——task 内联提交 +
   /// action 直接执行 + gate 预算澄清。命中返回最终回复，未命中返回 null。
@@ -619,6 +642,8 @@ public:
     int fc_iterations_used{0};                ///< 暂停时已消耗迭代数（续跑预算=上限-已用）
     std::chrono::steady_clock::time_point created_at;
     std::string user_text;                    ///< 触发审批的原始用户输入（重放用）
+    bool local_gguf{false};                   ///< true=离线 GGUF FC，批准后走 run_local_tool_loop
+    int gen_budget{2048};                     ///< 离线续跑每轮 max_tokens
     static constexpr int kTimeoutSec = 300;   ///< 5 分钟超时
   };
   std::unordered_map<std::string, PendingApproval> fc_pending_approvals_;

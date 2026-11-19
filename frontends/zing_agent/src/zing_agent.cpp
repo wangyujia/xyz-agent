@@ -4,11 +4,18 @@
 //
 // P2/P3（服务代管/远程 ssh）在此宿主上扩展安装器与连接管理。
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
 
 #include "webview/webview.h"
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
 #include "DebugLogger.h"
 #include "ServiceManager.h"
 #include "ConfigStore.h"
@@ -236,8 +243,39 @@ int main(int argc, char** argv) {
 #endif
         webview::webview w(false, nullptr);
         w.set_title("Zing Agent");
-#ifndef _WIN32
-        w.set_size(1280, 840, WEBVIEW_HINT_NONE);
+#ifdef _WIN32
+        // 当前鼠标所在屏居中（webview set_size 会强制 show，先离屏再 SetWindowPlacement）
+        const int wantW = 1280, wantH = 840;
+        POINT cursor{};
+        GetCursorPos(&cursor);
+        HMONITOR curMon = MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO mi{};
+        mi.cbSize = sizeof(mi);
+        GetMonitorInfo(curMon, &mi);
+        const int monW = mi.rcWork.right - mi.rcWork.left;
+        const int monH = mi.rcWork.bottom - mi.rcWork.top;
+        const int winW = (std::min)(wantW, monW);
+        const int winH = (std::min)(wantH, monH);
+        const int nx = mi.rcWork.left + (monW - winW) / 2;
+        const int ny = mi.rcWork.top + (monH - winH) / 2;
+        if (auto result = w.window(); result.ok()) {
+            if (HWND hwnd = static_cast<HWND>(result.value())) {
+                SetWindowPos(hwnd, nullptr, mi.rcWork.left, mi.rcWork.top - 10000,
+                             0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+        }
+        w.set_size(winW, winH, WEBVIEW_HINT_NONE);
+        if (auto result = w.window(); result.ok()) {
+            if (HWND hwnd = static_cast<HWND>(result.value())) {
+                ShowWindow(hwnd, SW_HIDE);
+                WINDOWPLACEMENT wp{};
+                wp.length = sizeof(wp);
+                GetWindowPlacement(hwnd, &wp);
+                wp.rcNormalPosition = {nx, ny, nx + winW, ny + winH};
+                wp.showCmd = SW_HIDE;
+                SetWindowPlacement(hwnd, &wp);
+            }
+        }
 #else
         w.set_size(1280, 840, WEBVIEW_HINT_NONE);
 #endif
@@ -388,6 +426,17 @@ int main(int argc, char** argv) {
         cfg().set("zing_boot_ts", std::to_string(time(nullptr)));
         w.init(kInitJS);
         w.set_html(get_html().c_str());
+#ifdef _WIN32
+        // 离屏布局完成后再正常显示（居中于当前显示器）
+        w.dispatch([&w]() {
+            if (auto result = w.window(); result.ok()) {
+                if (HWND hwnd = static_cast<HWND>(result.value())) {
+                    ShowWindow(hwnd, SW_SHOWNORMAL);
+                    SetForegroundWindow(hwnd);
+                }
+            }
+        });
+#endif
         g_zing_alive.store(true);   // v17: 窗口进入事件循环——异步远端回调放行
         w.run();
         g_zing_alive.store(false);  // v17: 事件循环退出(窗口关闭)——拦截在途线程
@@ -400,7 +449,6 @@ int main(int argc, char** argv) {
 
 #ifdef _WIN32
 #include <stdlib.h>
-#include <windows.h>
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     return main(__argc, __argv);
 }
