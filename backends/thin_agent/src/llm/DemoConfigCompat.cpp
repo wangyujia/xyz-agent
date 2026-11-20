@@ -52,6 +52,34 @@ std::string canonicalize_access_profile(std::string profile) {
   return profile;
 }
 
+std::vector<std::string> access_profile_lookup_keys(const std::string& profile) {
+  std::vector<std::string> keys;
+  auto add = [&](const std::string& k) {
+    if (k.empty()) return;
+    for (const auto& e : keys) {
+      if (e == k) return;
+    }
+    keys.push_back(k);
+  };
+  add(profile);
+  add(canonicalize_access_profile(profile));
+  // 新旧互逆：家目录 YAML 可能仍是 *_demo 键，或请求旧名而仓库已是 *_mode。
+  static const char* pairs[][2] = {
+      {"offline_mode", "offline_demo"},
+      {"local_tools_mode", "local_tools_demo"},
+      {"lmstudio_mode", "lmstudio_demo"},
+      {"cloud_api_mode", "openai_compatible_demo"},
+  };
+  for (const auto& p : pairs) {
+    if (profile == p[0] || profile == p[1] ||
+        canonicalize_access_profile(profile) == p[0]) {
+      add(p[0]);
+      add(p[1]);
+    }
+  }
+  return keys;
+}
+
 bool DemoConfigCompat::valid() const {
   if (mode != "offline" && mode != "cloud" && mode != "auto") return false;
   if (mode == "offline") return true;
@@ -65,7 +93,7 @@ bool DemoConfigCompat::valid() const {
 }
 
 DemoConfigCompat load_demo_profile_compat(const std::string& yaml_path, const std::string& profile) {
-  const std::string resolved = canonicalize_access_profile(profile);
+  const auto keys = access_profile_lookup_keys(profile);
   std::ifstream in(yaml_path);
   if (!in.is_open()) in.open("../" + yaml_path);
   if (!in.is_open()) throw std::runtime_error("cannot open config: " + yaml_path);
@@ -74,13 +102,24 @@ DemoConfigCompat load_demo_profile_compat(const std::string& yaml_path, const st
   std::string line;
   bool in_profiles = false;
   bool in_target = false;
+  std::string resolved;
 
   while (std::getline(in, line)) {
     if (starts_with(line, "profiles:")) { in_profiles = true; continue; }
     if (!in_profiles) continue;
 
-    const std::string ptag = "  " + resolved + ":";
-    if (line == ptag) { in_target = true; continue; }
+    if (!in_target) {
+      for (const auto& key : keys) {
+        const std::string ptag = "  " + key + ":";
+        if (line == ptag) {
+          in_target = true;
+          resolved = key;
+          break;
+        }
+      }
+      if (in_target) continue;
+      continue;
+    }
 
     if (in_target) {
       // 遇到下一个同级 profile 键则结束当前块解析。
@@ -170,7 +209,14 @@ DemoConfigCompat load_demo_profile_compat(const std::string& yaml_path, const st
     }
   }
 
-  if (!in_target) throw std::runtime_error("profile not found: " + resolved);
+  if (!in_target) {
+    std::string joined;
+    for (size_t i = 0; i < keys.size(); ++i) {
+      if (i) joined += "|";
+      joined += keys[i];
+    }
+    throw std::runtime_error("profile not found: " + profile + " (tried " + joined + ")");
+  }
   return cfg;
 }
 

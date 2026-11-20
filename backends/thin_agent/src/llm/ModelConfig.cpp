@@ -54,7 +54,7 @@ bool ModelConfig::valid() const {
 }
 
 ModelConfig load_demo_profile(const std::string& yaml_path, const std::string& profile) {
-  const std::string resolved = canonicalize_access_profile(profile);
+  const auto keys = access_profile_lookup_keys(profile);
   std::ifstream in(yaml_path);
   if (!in.is_open()) in.open("../" + yaml_path);
 
@@ -72,9 +72,13 @@ ModelConfig load_demo_profile(const std::string& yaml_path, const std::string& p
     }
     if (!in_profiles) continue;
 
-    const std::string ptag = "  " + resolved + ":";
-    if (line == ptag) {
-      in_target = true;
+    if (!in_target) {
+      for (const auto& key : keys) {
+        if (line == ("  " + key + ":")) {
+          in_target = true;
+          break;
+        }
+      }
       continue;
     }
 

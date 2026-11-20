@@ -763,6 +763,8 @@ int main(int argc, char** argv) {
 
   try {
     auto cfg = thin_agent::load_demo_profile_compat(config, profile);
+    // 数据目录与 active_channel_ 统一用规范化名，避免 offline_demo/offline_mode 分裂。
+    profile = thin_agent::canonicalize_access_profile(profile);
     thin_agent::thin_agent_set_profile(profile);  // v0.43.0: 隔离 data_dir/config_dir
     // 环境变量覆盖：THIN_AGENT_AUTO_MODE=1 → 本地优先级联路由
     if (const char* env = std::getenv("THIN_AGENT_AUTO_MODE"); env && env[0] == '1') {

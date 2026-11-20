@@ -573,6 +573,7 @@ public:
   std::unique_ptr<CurlHttpClient> http_client_;                ///< HTTP 客户端（CloudEmbeddingProvider 等组件的生命周期宿主）
   std::unique_ptr<LocalLlmSidecar> llm_sidecar_;               ///< 托管 llama-server（local_tools_mode）
   std::mutex sidecar_mu_;                                      ///< 保护 llm_sidecar_ 启停（boot/chat 并发）
+  std::atomic<uint64_t> sidecar_boot_gen_{0};                  ///< 切换/析构时作废后台 boot
   std::thread sidecar_boot_thread_;                            ///< 后台拉起 sidecar，避免阻塞 /health
   SkillRegistry skill_registry_;                               ///< Skill/Action 注册表
   std::atomic<int> sub_agent_counter_{0};                      ///< 子 Agent 计数

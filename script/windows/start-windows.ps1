@@ -123,19 +123,52 @@ $HomeConfig = Join-Path $env:USERPROFILE ".thin_agent\demo.model.yaml"
 $Config = $RepoConfig
 if (Test-Path $HomeConfig) { $Config = $HomeConfig }
 
-# 家目录旧 YAML 可能没有 *_mode 键：缺 profile 时回退仓库配置。
-if (-not (Test-YamlHasProfile $Config $AgentProfile)) {
+# 家目录旧 YAML 可能没有 *_mode 键：缺 profile 时优先改用仓库配置。
+$profileAliases = @{
+  "offline_mode" = @("offline_mode", "offline_demo")
+  "offline_demo" = @("offline_mode", "offline_demo")
+  "local_tools_mode" = @("local_tools_mode", "local_tools_demo")
+  "local_tools_demo" = @("local_tools_mode", "local_tools_demo")
+  "lmstudio_mode" = @("lmstudio_mode", "lmstudio_demo")
+  "lmstudio_demo" = @("lmstudio_mode", "lmstudio_demo")
+  "cloud_api_mode" = @("cloud_api_mode", "openai_compatible_demo")
+  "openai_compatible_demo" = @("cloud_api_mode", "openai_compatible_demo")
+}
+function Test-ConfigHasAccessProfile([string]$YamlPath, [string]$Profile) {
+  $cands = @($Profile)
+  if ($profileAliases.ContainsKey($Profile)) { $cands = $profileAliases[$Profile] }
+  foreach ($c in $cands) {
+    if (Test-YamlHasProfile $YamlPath $c) { return $true }
+  }
+  return $false
+}
+
+if (-not (Test-ConfigHasAccessProfile $Config $AgentProfile)) {
   if ((Test-Path $RepoConfig) -and -not (Test-SamePath $Config $RepoConfig) -and
-      (Test-YamlHasProfile $RepoConfig $AgentProfile)) {
+      (Test-ConfigHasAccessProfile $RepoConfig $AgentProfile)) {
     Write-Host "配置 $Config 缺少 profile '$AgentProfile'，改用仓库配置 $RepoConfig"
     $Config = $RepoConfig
-  } elseif ($AgentProfile -eq "local_tools_mode" -and (Test-YamlHasProfile $Config "offline_mode")) {
-    Write-Host "配置缺少 local_tools_mode，回退 offline_mode"
-    $AgentProfile = "offline_mode"
-  } elseif ($AgentProfile -eq "local_tools_mode" -and (Test-YamlHasProfile $Config "offline_demo")) {
-    Write-Host "配置仍是旧键，回退 offline_demo（加载器会映射到 offline_mode，若 YAML 仅有旧键则需更新）"
-    $AgentProfile = "offline_demo"
+  } elseif ($AgentProfile -eq "local_tools_mode" -or $AgentProfile -eq "local_tools_demo") {
+    if (Test-ConfigHasAccessProfile $Config "offline_mode") {
+      Write-Host "配置缺少 local_tools_mode，回退 offline_mode"
+      $AgentProfile = "offline_mode"
+    } elseif ((Test-Path $RepoConfig) -and (Test-ConfigHasAccessProfile $RepoConfig "offline_mode")) {
+      Write-Host "配置缺少可用访问模式，改用仓库 offline_mode"
+      $Config = $RepoConfig
+      $AgentProfile = "offline_mode"
+    } else {
+      Write-Host "配置中找不到 local_tools_mode / offline_mode，无法启动。"
+      exit 1
+    }
   }
+}
+
+# 规范化脚本侧默认名（与 C++ canonicalize 对齐）
+switch ($AgentProfile) {
+  "offline_demo" { $AgentProfile = "offline_mode" }
+  "local_tools_demo" { $AgentProfile = "local_tools_mode" }
+  "lmstudio_demo" { $AgentProfile = "lmstudio_mode" }
+  "openai_compatible_demo" { $AgentProfile = "cloud_api_mode" }
 }
 
 # local_tools_mode 依赖 sidecar：缺二进制/模型时预先回退，避免“健康但对话挂”。

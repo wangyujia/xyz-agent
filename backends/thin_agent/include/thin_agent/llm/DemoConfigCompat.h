@@ -79,7 +79,7 @@ struct DemoConfigCompat {
   std::string sidecar_server_path;   ///< llama-server 可执行文件；空则探测默认路径
   std::string sidecar_model_path;    ///< GGUF 路径
   std::string sidecar_host{"127.0.0.1"};
-  int sidecar_port{1234};
+  int sidecar_port{0};  ///< 0=从 api_base 解析，否则默认 1234
   int sidecar_n_ctx{0};              ///< 0=模型默认
   int sidecar_n_gpu_layers{-1};      ///< <0 不传 -ngl；0=CPU
   int sidecar_ready_timeout_ms{120000};
@@ -88,8 +88,11 @@ struct DemoConfigCompat {
   bool valid() const;
 };
 
-/// 访问模式旧名兼容：offline_demo → offline_mode 等（其它 profile 原样返回）。
+/// 访问模式旧名 → 新名：offline_demo → offline_mode 等（其它原样返回）。
 std::string canonicalize_access_profile(std::string profile);
+
+/// 加载时候选键：请求名、规范化名、以及新旧互逆别名（兼容家目录旧 YAML 键）。
+std::vector<std::string> access_profile_lookup_keys(const std::string& profile);
 
 /// 轻量 YAML profile 解析器，读取 config/demo.model.yaml 中指定 profile 块。
 /// @throws std::runtime_error 文件打不开或 profile 不存在

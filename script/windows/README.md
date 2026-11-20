@@ -30,7 +30,7 @@ script\windows\start-windows.bat
 5. 后端若已在该端口健康，则不再启动第二个进程。
 6. 健康检查通过后打开 `zing_agent`。界面默认连接 `ws://127.0.0.1:8765/ws`。
 
-健康检查地址是 `http://127.0.0.1:8765/health`。日志在 `%USERPROFILE%\.thin_agent\logs\agent_svc.log`。15 秒内没有就绪时，脚本会打印日志末尾并退出。
+健康检查地址是 `http://127.0.0.1:8765/health`。日志在 `%USERPROFILE%\.thin_agent\logs\agent_svc.log`。约 60 秒内没有就绪时，脚本会打印日志末尾并退出。sidecar 在后台加载模型，首轮对话可能再多等一会儿。
 
 ## 参数
 

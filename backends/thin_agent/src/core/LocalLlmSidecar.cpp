@@ -51,7 +51,7 @@ std::string resolve_existing(const std::string& path) {
   if (fs::exists(path, ec)) return path;
   const fs::path alt = fs::path("..") / path;
   if (fs::exists(alt, ec)) return alt.string();
-  return path;  // 交给启动失败报错
+  return path;
 }
 
 std::string default_server_path() {
@@ -78,25 +78,73 @@ std::string default_server_path() {
   return cand[0];
 }
 
+bool parse_host_port_from_api_base(const std::string& api_base, std::string* host,
+                                   int* port) {
+  if (!host || !port || api_base.empty()) return false;
+  std::string s = api_base;
+  const auto scheme = s.find("://");
+  if (scheme != std::string::npos) s = s.substr(scheme + 3);
+  const auto slash = s.find('/');
+  if (slash != std::string::npos) s = s.substr(0, slash);
+  const auto colon = s.rfind(':');
+  if (colon == std::string::npos) return false;
+  *host = s.substr(0, colon);
+  try {
+    *port = std::stoi(s.substr(colon + 1));
+  } catch (...) {
+    return false;
+  }
+  return !host->empty() && *port > 0;
+}
+
 }  // namespace
 
 LocalLlmSidecar::~LocalLlmSidecar() { stop(); }
 
 std::string LocalLlmSidecar::make_api_base(const DemoConfigCompat& cfg) {
   if (!cfg.api_base.empty()) return trim_slash(cfg.api_base);
-  const std::string host =
-      cfg.sidecar_host.empty() ? "127.0.0.1" : cfg.sidecar_host;
-  const int port = cfg.sidecar_port > 0 ? cfg.sidecar_port : 1234;
+  std::string host;
+  int port = 0;
+  resolve_listen(cfg, &host, &port);
   return "http://" + host + ":" + std::to_string(port) + "/v1";
 }
 
-bool LocalLlmSidecar::probe(const std::string& api_base, int timeout_ms) {
+void LocalLlmSidecar::resolve_listen(const DemoConfigCompat& cfg, std::string* host,
+                                     int* port) {
+  // api_base 与监听地址单一来源：有 api_base 时优先从其 URL 拆 host/port，
+  // 避免客户端打 A、进程听 B。
+  std::string h;
+  int p = 0;
+  if (!cfg.api_base.empty() && parse_host_port_from_api_base(cfg.api_base, &h, &p)) {
+    if (host) *host = h;
+    if (port) *port = p;
+    return;
+  }
+  h = cfg.sidecar_host.empty() ? "127.0.0.1" : cfg.sidecar_host;
+  p = cfg.sidecar_port > 0 ? cfg.sidecar_port : 1234;
+  if (host) *host = h;
+  if (port) *port = p;
+}
+
+std::string LocalLlmSidecar::identity_of(const DemoConfigCompat& cfg) {
+  std::ostringstream oss;
+  oss << make_api_base(cfg) << "|"
+      << (cfg.sidecar_model_path.empty() ? "models/gguf/aurum-brain-q4_k_m.gguf"
+                                         : cfg.sidecar_model_path)
+      << "|" << cfg.model_name;
+  return oss.str();
+}
+
+bool LocalLlmSidecar::probe(const std::string& api_base, int timeout_ms,
+                            const std::string& expect_model) {
   std::string base =
       api_base.empty() ? "http://127.0.0.1:1234/v1" : trim_slash(api_base);
   const std::string url = base + "/models";
   CurlHttpClient http(timeout_ms > 0 ? timeout_ms : 2000);
   auto resp = http.get(url, "");
-  return resp.ok && resp.status_code >= 200 && resp.status_code < 300;
+  if (!(resp.ok && resp.status_code >= 200 && resp.status_code < 300)) return false;
+  if (expect_model.empty()) return true;
+  return resp.body.find(expect_model) != std::string::npos;
 }
 
 std::string LocalLlmSidecar::api_base() const {
@@ -121,15 +169,16 @@ bool LocalLlmSidecar::is_running() const {
 }
 
 bool LocalLlmSidecar::wait_healthy(const std::string& api_base, int timeout_ms,
+                                   const std::string& expect_model, uint64_t gen,
                                    std::string* err) {
   const auto deadline =
       std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
   while (std::chrono::steady_clock::now() < deadline) {
-    if (stopping_.load()) {
-      if (err) *err = "sidecar stop requested";
+    if (cancel_gen_.load() != gen) {
+      if (err) *err = "sidecar cancelled";
       return false;
     }
-    if (probe(api_base, 1500)) return true;
+    if (probe(api_base, 1500, expect_model)) return true;
 #ifdef _WIN32
     {
       std::lock_guard<std::mutex> lk(mu_);
@@ -137,7 +186,8 @@ bool LocalLlmSidecar::wait_healthy(const std::string& api_base, int timeout_ms,
         DWORD code = STILL_ACTIVE;
         if (GetExitCodeProcess(static_cast<HANDLE>(process_handle_), &code) &&
             code != STILL_ACTIVE) {
-          if (err) *err = "llama-server exited early (code=" + std::to_string(code) + ")";
+          if (err)
+            *err = "llama-server exited early (code=" + std::to_string(code) + ")";
           return false;
         }
       }
@@ -174,9 +224,9 @@ bool LocalLlmSidecar::spawn(const DemoConfigCompat& cfg, std::string* err) {
     return false;
   }
 
-  const std::string host =
-      cfg.sidecar_host.empty() ? "127.0.0.1" : cfg.sidecar_host;
-  const int port = cfg.sidecar_port > 0 ? cfg.sidecar_port : 1234;
+  std::string host;
+  int port = 0;
+  resolve_listen(cfg, &host, &port);
 
   std::ostringstream cmd;
   cmd << quote_arg(server) << " -m " << quote_arg(model) << " --host " << host
@@ -214,7 +264,12 @@ bool LocalLlmSidecar::spawn(const DemoConfigCompat& cfg, std::string* err) {
     if (err) *err = "CreateProcess failed (" + std::to_string(GetLastError()) + ")";
     return false;
   }
-  if (hJob) AssignProcessToJobObject(hJob, pi.hProcess);
+  if (hJob) {
+    if (!AssignProcessToJobObject(hJob, pi.hProcess)) {
+      std::cerr << "[LocalLlmSidecar] warn: AssignProcessToJobObject failed ("
+                << GetLastError() << ")\n";
+    }
+  }
   CloseHandle(pi.hThread);
 
   {
@@ -224,6 +279,7 @@ bool LocalLlmSidecar::spawn(const DemoConfigCompat& cfg, std::string* err) {
     pid_ = pi.dwProcessId;
     port_ = port;
     api_base_ = make_api_base(cfg);
+    identity_ = identity_of(cfg);
   }
   owned_.store(true);
   return true;
@@ -234,7 +290,6 @@ bool LocalLlmSidecar::spawn(const DemoConfigCompat& cfg, std::string* err) {
     return false;
   }
   if (pid == 0) {
-    // child
     std::vector<std::string> args_store = {server, "-m", model, "--host", host,
                                            "--port", std::to_string(port), "--jinja"};
     if (!cfg.model_name.empty()) {
@@ -261,6 +316,7 @@ bool LocalLlmSidecar::spawn(const DemoConfigCompat& cfg, std::string* err) {
     pid_ = static_cast<int>(pid);
     port_ = port;
     api_base_ = make_api_base(cfg);
+    identity_ = identity_of(cfg);
   }
   owned_.store(true);
   return true;
@@ -273,49 +329,87 @@ bool LocalLlmSidecar::ensure_running(const DemoConfigCompat& cfg, std::string* e
     if (err) *err = "sidecar_disabled";
     return false;
   }
-  stopping_.store(false);
 
+  const uint64_t gen = cancel_gen_.load();
+  const std::string want_id = identity_of(cfg);
   const std::string base = make_api_base(cfg);
+  const std::string expect_model = cfg.model_name;
   {
     std::lock_guard<std::mutex> lk(mu_);
     api_base_ = base;
   }
 
-  // 已有健康端点（手动 llama-server / 上次拉起仍活着）→ 复用
-  if (probe(base, 2000)) {
-    std::cerr << "[LocalLlmSidecar] reuse healthy endpoint " << base << std::endl;
-    return true;
+  auto cancelled = [&]() { return cancel_gen_.load() != gen; };
+
+  // 已有健康且身份匹配的端点 → 复用（外部或本进程上次拉起）
+  if (probe(base, 2000, expect_model)) {
+    std::string cur_id;
+    {
+      std::lock_guard<std::mutex> lk(mu_);
+      cur_id = identity_;
+    }
+    if (cur_id.empty() || cur_id == want_id) {
+      std::lock_guard<std::mutex> lk(mu_);
+      identity_ = want_id;
+      std::cerr << "[LocalLlmSidecar] reuse healthy endpoint " << base << std::endl;
+      return true;
+    }
+    // 同端口但身份变了：若是我们拥有的进程则重建；外部进程则报错避免误用
+    if (!owned_.load()) {
+      if (err)
+        *err = "endpoint healthy but model identity mismatch (external process on " +
+               base + ")";
+      return false;
+    }
   }
 
-  // 我们已持有进程但尚未就绪 → 继续等
+  if (cancelled()) {
+    if (err) *err = "sidecar cancelled";
+    return false;
+  }
+
+  // 已持有匹配身份的进程但尚未就绪 → 继续等
   if (owned_.load() && is_running()) {
-    const int wait_ms =
-        cfg.sidecar_ready_timeout_ms > 0 ? cfg.sidecar_ready_timeout_ms : 120000;
-    return wait_healthy(base, wait_ms, err);
+    std::string cur_id;
+    {
+      std::lock_guard<std::mutex> lk(mu_);
+      cur_id = identity_;
+    }
+    if (cur_id == want_id) {
+      const int wait_ms =
+          cfg.sidecar_ready_timeout_ms > 0 ? cfg.sidecar_ready_timeout_ms : 120000;
+      return wait_healthy(base, wait_ms, expect_model, gen, err);
+    }
   }
 
-  // 清理残留句柄后重新拉起
-  stop();
+  // 身份变化或无进程：只杀托管进程（不 bump cancel），再拉起
+  kill_owned();
+  if (cancelled()) {
+    if (err) *err = "sidecar cancelled";
+    return false;
+  }
   if (!spawn(cfg, err)) return false;
+  if (cancelled()) {
+    kill_owned();
+    if (err) *err = "sidecar cancelled";
+    return false;
+  }
 
   const int wait_ms =
       cfg.sidecar_ready_timeout_ms > 0 ? cfg.sidecar_ready_timeout_ms : 120000;
-  if (!wait_healthy(base, wait_ms, err)) {
-    stop();
+  if (!wait_healthy(base, wait_ms, expect_model, gen, err)) {
+    kill_owned();
     return false;
   }
   std::cerr << "[LocalLlmSidecar] ready at " << base << std::endl;
   return true;
 }
 
-void LocalLlmSidecar::stop() {
-  stopping_.store(true);
+void LocalLlmSidecar::kill_owned() {
   if (!owned_.exchange(false)) {
 #ifdef _WIN32
     std::lock_guard<std::mutex> lk(mu_);
-    // 未托管时仍清理可能残留的句柄字段（不杀外部进程）
     if (process_handle_) {
-      // 仅关闭句柄，不 Terminate
       CloseHandle(static_cast<HANDLE>(process_handle_));
       process_handle_ = nullptr;
     }
@@ -324,9 +418,11 @@ void LocalLlmSidecar::stop() {
       job_handle_ = nullptr;
     }
     pid_ = 0;
+    identity_.clear();
 #else
     std::lock_guard<std::mutex> lk(mu_);
     pid_ = -1;
+    identity_.clear();
 #endif
     return;
   }
@@ -341,6 +437,7 @@ void LocalLlmSidecar::stop() {
     process_handle_ = nullptr;
     job_handle_ = nullptr;
     pid_ = 0;
+    identity_.clear();
   }
   if (proc) {
     TerminateProcess(proc, 1);
@@ -354,6 +451,7 @@ void LocalLlmSidecar::stop() {
     std::lock_guard<std::mutex> lk(mu_);
     pid = pid_;
     pid_ = -1;
+    identity_.clear();
   }
   if (pid > 0) {
     kill(pid, SIGTERM);
@@ -369,6 +467,11 @@ void LocalLlmSidecar::stop() {
   }
 #endif
   std::cerr << "[LocalLlmSidecar] stopped" << std::endl;
+}
+
+void LocalLlmSidecar::stop() {
+  cancel_gen_.fetch_add(1, std::memory_order_acq_rel);
+  kill_owned();
 }
 
 }  // namespace thin_agent

@@ -89,8 +89,12 @@ AgentService::~AgentService() {
   /// ——此前 stop 不存在:execute_async per-request detach 捕 this,
   /// AgentService 析构后继续跑=UAF(第 7 例线程停机闸)
   if (orchestrator_) orchestrator_->stop();
-  // 先打断 wait_healthy，再 join，避免退出时卡在 180s 就绪等待上。
-  if (llm_sidecar_) llm_sidecar_->stop();
+  // 先作废 boot、打断 wait_healthy，再 join，避免退出时卡在就绪等待上。
+  sidecar_boot_gen_.fetch_add(1, std::memory_order_acq_rel);
+  {
+    std::lock_guard<std::mutex> lk(sidecar_mu_);
+    if (llm_sidecar_) llm_sidecar_->stop();
+  }
   if (sidecar_boot_thread_.joinable()) sidecar_boot_thread_.join();
 }
 
@@ -110,9 +114,18 @@ AgentService::AgentService(DemoConfigCompat cfg,
   // sidecar 异步拉起：不阻塞 listen//health（模型加载常 >15s）。
   // 首轮对话 / switch_profile 仍会 ensure_llm_sidecar 同步等待就绪。
   if (cfg_.sidecar_enabled) {
-    sidecar_boot_thread_ = std::thread([this]() {
+    {
+      std::lock_guard<std::mutex> lk(sidecar_mu_);
+      if (!llm_sidecar_) llm_sidecar_ = std::make_unique<LocalLlmSidecar>();
+    }
+    const uint64_t boot_gen = sidecar_boot_gen_.load(std::memory_order_acquire);
+    sidecar_boot_thread_ = std::thread([this, boot_gen]() {
       try {
-        const std::string warn = ensure_llm_sidecar(cfg_snapshot());
+        if (sidecar_boot_gen_.load(std::memory_order_acquire) != boot_gen) return;
+        DemoConfigCompat snap = cfg_snapshot();
+        if (!snap.sidecar_enabled) return;
+        if (sidecar_boot_gen_.load(std::memory_order_acquire) != boot_gen) return;
+        const std::string warn = ensure_llm_sidecar(snap);
         if (!warn.empty()) std::cerr << "[WARN] " << warn << std::endl;
       } catch (const std::exception& e) {
         std::cerr << "[WARN] sidecar boot failed: " << e.what() << std::endl;
@@ -346,12 +359,15 @@ nlohmann::json AgentService::switch_channel(const std::string& channel) {
   bool probed = false;
   bool sidecar_ok = false;
 
+  // 任何通道切换都作废旧 boot；离开 sidecar 时 stop，进入时 ensure。
+  sidecar_boot_gen_.fetch_add(1, std::memory_order_acq_rel);
+  {
+    std::lock_guard<std::mutex> lk(sidecar_mu_);
+    if (llm_sidecar_) llm_sidecar_->stop();
+  }
   if (loaded.sidecar_enabled) {
     warning = ensure_llm_sidecar(loaded);
     sidecar_ok = warning.empty();
-  } else {
-    std::lock_guard<std::mutex> lk(sidecar_mu_);
-    if (llm_sidecar_ && llm_sidecar_->owned()) llm_sidecar_->stop();
   }
 
   if (prov == "lmstudio") {

@@ -3230,10 +3230,16 @@ nlohmann::json AgentService::chat_cloud_precheck(ChatContext& ctx,
                                                  std::string& key_state,
                                                  std::string& api_key) {
   // 托管 sidecar：首轮对话前同步等到就绪（构造期已异步预热）。
+  // 失败直接返回，避免继续打不可达端点再空耗 request_timeout。
   if (cfg_.sidecar_enabled) {
     const std::string warn = ensure_llm_sidecar(cfg_);
     if (!warn.empty()) {
       std::cerr << "[WARN] " << warn << std::endl;
+      return make_local_reply(
+          ctx, "local_error", "sidecar_not_ready", warn,
+          {{"sidecar_enabled", true}, {"error", "sidecar_not_ready"}},
+          nlohmann::json::array(), "sidecar", 1.0, nlohmann::json::object(),
+          "clarify");
     }
   }
 
