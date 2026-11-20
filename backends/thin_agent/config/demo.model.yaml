@@ -7,11 +7,12 @@
 #
 # 安全：勿在仓库写入真实 API Key；通过 api_key_env 指定环境变量名注入。
 #
-# profile 选用建议：
-#   offline_demo        — 纯本地，无云调用
-#   cloud_mock_demo     — 本地 mock 云（127.0.0.1:18080）
-#   zai_fast_demo       — 智谱 GLM 快通道 glm-4.5-flash（需 GLM_API_KEY）
-#   zai_main_demo       — 智谱 GLM 主力模型 glm-5.2（需 GLM_API_KEY）
+# 访问模式（推荐）：
+#   offline_mode        — 进程内本地 GGUF / 规则
+#   local_tools_mode    — 托管 llama-server sidecar（native tools）
+#   lmstudio_mode       — 外接已启动的本地 OpenAI 端点
+#   cloud_api_mode      — 通用 OpenAI 兼容云 API（自建/代理）
+# 其它预设仍可用：cloud_mock_demo / deepseek_* / zai_* 等
 #
 # 对话策略（关键词/模板/槽位）见 config/chat_policy.json
 # 可用 THIN_AGENT_CHAT_POLICY_PATH 覆盖策略文件路径。
@@ -61,7 +62,7 @@ model:
   external_weather_url: ""
 
 profiles:
-  offline_demo:
+  offline_mode:
     mode: offline
     provider: ""
     name: ""
@@ -106,8 +107,8 @@ profiles:
     pipeline_enable_rollback_hook: false
     external_provider: mock
 
-  # 通用 OpenAI 兼容网关（私有代理 / 自建）
-  openai_compatible_demo:
+  # 通用 OpenAI 兼容云 API（私有代理 / 自建网关）
+  cloud_api_mode:
     mode: cloud
     provider: openai-compatible
     name: custom-model
@@ -199,10 +200,12 @@ profiles:
     pipeline_enable_rollback_hook: false
     external_provider: mock
 
-  # LM Studio 本地推理（v0.53.34）——OpenAI 兼容本地端点,无需 key
-  # LM Studio 启动并 load 模型后: thin_agent --profile lmstudio_demo
-  # name/api_base 留空=默认(LM Studio 当前加载的模型 / 127.0.0.1:1234/v1)
-  lmstudio_demo:
+  # LM Studio / llama-server 等 OpenAI 兼容本地端点（v0.53.34）——无需 key
+  # 走云端同一套 native function calling（tools/tool_calls），比进程内 GGUF 文本协议稳。
+  # 例: LM Studio load 后 thin_agent --profile lmstudio_mode
+  #     llama-server --port 1234 后同样可用（api_base 可改成 http://127.0.0.1:8080/v1）
+  # name/api_base 留空=默认(当前加载模型 / 127.0.0.1:1234/v1)
+  lmstudio_mode:
     mode: cloud
     provider: lmstudio
     name: ""
@@ -217,6 +220,34 @@ profiles:
     complex_intent_force_cloud: false
     pipeline_enable_rollback_hook: false
     external_provider: mock
+
+  # 托管 llama-server sidecar：thin_agent 自动拉起/健康检查/退出时回收。
+  # 直连读文件仍走 Agent 内建；需要模型自主 tools 时切此 profile。
+  # 依赖：C:/deps-thin-agent/llama.cpp/bin/llama-server.exe + Aurum GGUF
+  # 启动：thin_agent --profile local_tools_mode
+  local_tools_mode:
+    mode: cloud
+    provider: lmstudio
+    name: aurum-brain   # 传给 llama-server --alias，请求体用此 id
+    api_base: "http://127.0.0.1:1234/v1"
+    api_key_env: ""
+    request_timeout_ms: 180000
+    max_completion_tokens: 8192
+    fallback: offline
+    budget_max_input_chars: 0
+    budget_max_latency_ms: 0
+    budget_max_cost_cents: 0
+    complex_intent_force_cloud: false
+    pipeline_enable_rollback_hook: false
+    external_provider: mock
+    sidecar_enabled: true
+    sidecar_server_path: "C:/deps-thin-agent/llama.cpp/bin/llama-server.exe"
+    sidecar_model_path: "models/gguf/aurum-brain-q4_k_m.gguf"
+    sidecar_host: "127.0.0.1"
+    sidecar_port: 1234
+    sidecar_n_ctx: 0
+    sidecar_n_gpu_layers: -1
+    sidecar_ready_timeout_ms: 180000
 
   # 智谱 AI（Z.AI / GLM）— 主力模型
   # glm-5.2（深度推理 + Native Function Calling）

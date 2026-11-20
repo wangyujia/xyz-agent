@@ -1571,6 +1571,131 @@ std::string AgentService::build_offline_system_prompt(ChatContext& ctx) {
 
 namespace {
 
+struct DirectFileHit {
+  bool matched = false;
+  bool ok = false;
+  bool analyze = false;
+  std::string path;
+  std::string content;
+  std::string error;
+  int total_lines = 0;
+};
+
+std::string extract_local_file_path(const std::string& text) {
+  if (text.empty()) return {};
+  auto looks_like_path = [](const std::string& s) -> bool {
+    if (s.size() < 2) return false;
+    if (s.size() >= 3 && std::isalpha(static_cast<unsigned char>(s[0])) &&
+        s[1] == ':' && (s[2] == '\\' || s[2] == '/'))
+      return true;
+    if (s[0] == '/' && s.find('/', 1) != std::string::npos) return true;
+    if (s.size() >= 4 && s[0] == '\\' && s[1] == '\\') return true;
+    return false;
+  };
+  auto strip_quotes = [](std::string s) {
+    while (!s.empty() && (s.front() == ' ' || s.front() == '\t')) s.erase(s.begin());
+    while (!s.empty() && (s.back() == ' ' || s.back() == '\t')) s.pop_back();
+    if (s.size() >= 2) {
+      const char a = s.front(), b = s.back();
+      if ((a == '"' && b == '"') || (a == '\'' && b == '\'') ||
+          (a == '`' && b == '`'))
+        s = s.substr(1, s.size() - 2);
+    }
+    const std::string lq = "\xe2\x80\x9c", rq = "\xe2\x80\x9d";
+    if (s.size() >= 6 && s.compare(0, 3, lq) == 0 &&
+        s.compare(s.size() - 3, 3, rq) == 0)
+      s = s.substr(3, s.size() - 6);
+    return s;
+  };
+
+  std::string best;
+  {
+    static const std::regex re_q("\"([^\"]+)\"|'([^']+)'");
+    std::sregex_iterator it(text.begin(), text.end(), re_q), end;
+    for (; it != end; ++it) {
+      std::string cand =
+          (*it)[1].matched ? (*it)[1].str() : (*it)[2].str();
+      cand = strip_quotes(cand);
+      if (looks_like_path(cand) && cand.size() > best.size()) best = cand;
+    }
+    const std::string lq = "\xe2\x80\x9c", rq = "\xe2\x80\x9d";
+    size_t p = 0;
+    while ((p = text.find(lq, p)) != std::string::npos) {
+      auto q = text.find(rq, p + lq.size());
+      if (q == std::string::npos) break;
+      std::string cand =
+          strip_quotes(text.substr(p + lq.size(), q - p - lq.size()));
+      if (looks_like_path(cand) && cand.size() > best.size()) best = cand;
+      p = q + rq.size();
+    }
+    if (!best.empty()) return best;
+  }
+  {
+    // 勿用 R"(...)"：类里的 )" 会截断原始字符串
+    static const std::regex re_win(
+        R"re(([A-Za-z]:[\\/][^\s"'`，。；：！？、）】》>\]]+))re");
+    static const std::regex re_unix(R"re((/(?:[\w.-]+/)+[\w.-]+))re");
+    std::smatch m;
+    if (std::regex_search(text, m, re_win) && m[1].matched) {
+      best = strip_quotes(m[1].str());
+      while (!best.empty() &&
+             std::string(".,;:!?)]>").find(best.back()) != std::string::npos)
+        best.pop_back();
+    }
+    if (best.empty() && std::regex_search(text, m, re_unix) && m[1].matched)
+      best = strip_quotes(m[1].str());
+    if (looks_like_path(best)) return best;
+  }
+  return {};
+}
+
+DirectFileHit try_direct_file_read(const std::string& user_text, int offset = 1,
+                                   int limit = 400) {
+  DirectFileHit hit;
+  const std::string path = extract_local_file_path(user_text);
+  if (path.empty()) return hit;
+  std::string lower = user_text;
+  for (char& c : lower)
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  static const char* kReadIntent[] = {
+      "读",   "看",   "打开", "查看", "分析", "解析", "总结", "日志",
+      "内容", "帮忙", "帮我", "read", "show", "open", "analy", "inspect",
+      "cat ", "log",  "dump", "tail"};
+  bool intent = false;
+  for (const char* kw : kReadIntent) {
+    if (lower.find(kw) != std::string::npos) {
+      intent = true;
+      break;
+    }
+  }
+  std::string path_l = path;
+  for (char& c : path_l)
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  static const char* kExt[] = {".log", ".txt", ".json", ".csv", ".md",
+                               ".yaml", ".yml", ".xml", ".out", ".err"};
+  bool loggish = false;
+  for (const char* e : kExt) {
+    const size_t n = std::strlen(e);
+    if (path_l.size() >= n && path_l.compare(path_l.size() - n, n, e) == 0) {
+      loggish = true;
+      break;
+    }
+  }
+  if (!intent && !loggish) return hit;
+  hit.matched = true;
+  hit.path = path;
+  hit.analyze = intent || loggish;
+  auto rr = safe_read_file_paged(path, offset, limit);
+  if (!rr.success) {
+    hit.error = rr.error.empty() ? "read_failed" : rr.error;
+    return hit;
+  }
+  hit.ok = true;
+  hit.content = rr.output;
+  hit.total_lines = rr.total_lines;
+  return hit;
+}
+
 std::vector<thin_agent::local::GgufModel::ChatTurn> messages_to_gguf_turns(
     const std::vector<ChatMessage>& messages) {
   auto b64_decode = [](const std::string& in_raw) -> std::vector<uint8_t> {
@@ -1776,6 +1901,97 @@ AgentService::ChatCloudResult AgentService::chat_run_cloud(ChatContext& ctx,
               {{"tool", tool_name}, {"session", ctx.session_id}});
     return false;  // 暂停，等 chat_approve
   };
+
+  // ── 读文件/日志直连（云端同样先走，避免模型空谈工具）──
+  {
+    const auto file_hit = try_direct_file_read(ctx.text);
+    if (file_hit.matched) {
+      if (ctx.on_event) {
+        ctx.on_event("tool_call",
+                     {{"name", "read_file"},
+                      {"args", nlohmann::json{{"path", file_hit.path}}}});
+      }
+      if (!file_hit.ok) {
+        out.final = {
+            {"type", "chat_result"},
+            {"mode_used", "cloud-direct-read"},
+            {"intent_backend", "direct-read_file"},
+            {"provider", provider},
+            {"api_key_state", key_state},
+            {"decision",
+             {{"route", "cloud_direct_read"},
+              {"reason", "direct_read_file_failed"},
+              {"policy", "execute"}}},
+            {"tool_calls", nlohmann::json::array({{{"tool", "read_file"}}})},
+            {"text",
+             ctx.use_zh_progress
+                 ? ("无法读取文件：" + file_hit.path + "\n原因：" + file_hit.error)
+                 : ("Failed to read: " + file_hit.path + "\n" + file_hit.error)},
+        };
+        return out;
+      }
+      if (ctx.on_event) {
+        ctx.on_event("tool_result",
+                     {{"name", "read_file"},
+                      {"ok", true},
+                      {"path", file_hit.path},
+                      {"total_lines", file_hit.total_lines},
+                      {"preview", utf8_truncate(file_hit.content, 240)}});
+      }
+      const bool zh = ctx.use_zh_progress || ctx.query_lang == "zh";
+      DemoConfigCompat sum_cfg = cfg_;
+      const auto fast_cfg_ex = fast_path_config();
+      if (!fast_cfg_ex.model.empty()) sum_cfg.model_name = fast_cfg_ex.model;
+      std::string user_ask =
+          zh ? ("请根据下列文件内容分析问题，给出原因与建议（简洁分点）。\n\n文件: " +
+                file_hit.path + "\n总行数: " +
+                std::to_string(file_hit.total_lines) +
+                "\n\n----- 内容 -----\n" + file_hit.content)
+             : ("Analyze this file and summarize issues briefly.\n\nFile: " +
+                file_hit.path + "\nLines: " +
+                std::to_string(file_hit.total_lines) + "\n\n----- content -----\n" +
+                file_hit.content);
+      std::vector<ChatMessage> msgs = {
+          ChatMessage{"system",
+                      zh ? "你是 thin_agent。文件内容已提供，直接分析，"
+                           "不要再要求用户或自己调用工具。"
+                         : "You are thin_agent. File content is provided; "
+                           "analyze it. Do not call tools."},
+          ChatMessage{"user", user_ask},
+      };
+      CurlHttpClient http(sum_cfg.request_timeout_ms > 0
+                              ? sum_cfg.request_timeout_ms
+                              : 60000);
+      auto summary =
+          CloudLlmClient::chat_completion_with_fallback(http, sum_cfg, msgs);
+      if (summary.ok && !summary.text.empty()) {
+        out.final = {
+            {"type", "chat_result"},
+            {"mode_used", "cloud-direct-read"},
+            {"intent_backend", "direct-read_file"},
+            {"provider", provider},
+            {"model", sum_cfg.model_name},
+            {"api_base", cfg_.api_base},
+            {"api_key_env", cfg_.api_key_env},
+            {"api_key_state", key_state},
+            {"cloud_http_status", summary.http_status},
+            {"decision",
+             {{"route", "cloud_direct_read"},
+              {"reason", "direct_read_file"},
+              {"policy", "execute"}}},
+            {"tool_calls", nlohmann::json::array({{{"tool", "read_file"}}})},
+            {"text", summary.text},
+        };
+        return out;
+      }
+      // 总结失败：至少返回文件预览，再落到下方 FC
+      if (ctx.on_event) {
+        ctx.on_event("thinking",
+                     {{"tier", 2},
+                      {"msg", progress_msg("summarizing", ctx.use_zh_progress)}});
+      }
+    }
+  }
 
   // ── 简单文件操作提前判定：命中关键词时直接走 fast FC，跳过云策略 ──
   {
@@ -3013,6 +3229,14 @@ nlohmann::json AgentService::chat_cloud_precheck(ChatContext& ctx,
                                                  std::string& provider,
                                                  std::string& key_state,
                                                  std::string& api_key) {
+  // 托管 sidecar：首轮对话前同步等到就绪（构造期已异步预热）。
+  if (cfg_.sidecar_enabled) {
+    const std::string warn = ensure_llm_sidecar(cfg_);
+    if (!warn.empty()) {
+      std::cerr << "[WARN] " << warn << std::endl;
+    }
+  }
+
   // v0.42.3: cron 任务 provider 覆盖（通过 cfg_ 临时覆盖实现，见 cron callback）
   provider = normalize_provider(cfg_.provider);
   key_state = "not_required";
@@ -3129,6 +3353,131 @@ nlohmann::json AgentService::chat_cloud_precheck(ChatContext& ctx,
       // 与在线同一套 assemble_chat_messages；有工具时走本地 FC 循环
       const auto messages =
           assemble_chat_messages(ctx, build_offline_system_prompt(ctx));
+
+      // ── 读文件/日志直连：不依赖本地模型自觉发 tool_call ──
+      {
+        const auto file_hit = try_direct_file_read(ctx.text);
+        if (file_hit.matched) {
+          if (ctx.on_event) {
+            ctx.on_event("tool_call",
+                         {{"name", "read_file"},
+                          {"args", nlohmann::json{{"path", file_hit.path}}}});
+          }
+          if (!file_hit.ok) {
+            const std::string err =
+                ctx.use_zh_progress
+                    ? ("无法读取文件：" + file_hit.path + "\n原因：" +
+                       file_hit.error)
+                    : ("Failed to read file: " + file_hit.path + "\n" +
+                       file_hit.error);
+            return {
+                {"type", "chat_result"},
+                {"mode_used", "offline-direct-read"},
+                {"intent_backend", "direct-read_file"},
+                {"memory_size", ctx.snapshot.size()},
+                {"decision",
+                 {{"route", std::string(complexity_prefix()) + gguf->name()},
+                  {"reason", "direct_read_file_failed"},
+                  {"policy", "execute"}}},
+                {"tool_calls",
+                 nlohmann::json::array({{{"tool", "read_file"}}})},
+                {"text", err},
+            };
+          }
+          if (ctx.on_event) {
+            ctx.on_event(
+                "tool_result",
+                {{"name", "read_file"},
+                 {"ok", true},
+                 {"path", file_hit.path},
+                 {"total_lines", file_hit.total_lines},
+                 {"preview", utf8_truncate(file_hit.content, 240)}});
+          }
+
+          const bool zh = ctx.use_zh_progress || ctx.query_lang == "zh";
+          std::string ask;
+          if (file_hit.analyze) {
+            ask = zh ? ("请根据下列文件内容分析问题，给出原因与建议（用中文，"
+                        "简洁分点）。\n\n文件: " +
+                        file_hit.path + "\n总行数: " +
+                        std::to_string(file_hit.total_lines) +
+                        "\n\n----- 文件内容（可能已分页）-----\n" +
+                        file_hit.content)
+                     : ("Analyze the following file. Summarize issues and "
+                        "suggestions briefly.\n\nFile: " +
+                        file_hit.path + "\nTotal lines: " +
+                        std::to_string(file_hit.total_lines) +
+                        "\n\n----- content (possibly paged) -----\n" +
+                        file_hit.content);
+          } else {
+            ask = zh ? ("文件已读取（" + file_hit.path + "，共 " +
+                        std::to_string(file_hit.total_lines) +
+                        " 行）。请用中文简要说明要点：\n\n" + file_hit.content)
+                     : ("File read (" + file_hit.path + ", " +
+                        std::to_string(file_hit.total_lines) +
+                        " lines). Brief summary:\n\n" + file_hit.content);
+          }
+
+          std::vector<thin_agent::local::GgufModel::ChatTurn> turns;
+          turns.push_back({"system",
+                           zh ? "你是 thin_agent。已拿到文件内容，直接分析，"
+                                "不要再要求用户调用工具。"
+                              : "You are thin_agent. File content is already "
+                                "provided; analyze it. Do not ask the user to "
+                                "call tools.",
+                           {}});
+          turns.push_back({"user", ask, {}});
+          const int tokens = pick_tokens();
+          const auto t0 = std::chrono::steady_clock::now();
+          std::string reply;
+          if (ctx.on_chunk) {
+            gguf->infer_stream_turns(
+                turns,
+                [&](const std::string& tok, bool done) {
+                  if (!tok.empty()) reply += tok;
+                  ctx.on_chunk(tok, done);
+                },
+                tokens);
+          } else {
+            reply = gguf->infer_turns(turns, tokens);
+          }
+          if (reply.empty()) {
+            // 模型空答时至少把原文要点交出去
+            reply = zh ? ("已读取 " + file_hit.path + "（" +
+                          std::to_string(file_hit.total_lines) +
+                          " 行）。内容预览：\n" +
+                          utf8_truncate(file_hit.content, 3000))
+                       : ("Read " + file_hit.path + " (" +
+                          std::to_string(file_hit.total_lines) +
+                          " lines). Preview:\n" +
+                          utf8_truncate(file_hit.content, 3000));
+          }
+          nlohmann::json usage = {
+              {"latency_us",
+               std::chrono::duration_cast<std::chrono::microseconds>(
+                   std::chrono::steady_clock::now() - t0)
+                   .count()},
+              {"model", std::string(complexity_prefix()) + gguf->name()},
+          };
+          if (model_ctx > 0) usage["n_ctx"] = model_ctx;
+          return {
+              {"type", "chat_result"},
+              {"mode_used", "offline-direct-read"},
+              {"intent_backend", "direct-read_file"},
+              {"memory_size", ctx.snapshot.size()},
+              {"decision",
+               {{"route", std::string(complexity_prefix()) + gguf->name()},
+                {"reason", "direct_read_file"},
+                {"policy", "execute"}}},
+              {"tool_calls",
+               nlohmann::json::array({{{"tool", "read_file"}}})},
+              {"text", utf8_sanitize(reply)},
+              {"usage", usage},
+              {"n_ctx", model_ctx > 0 ? model_ctx : 0},
+          };
+        }
+      }
+
       if (!ctx.image_base64.empty() && ctx.on_event) {
         if (gguf->vision_ready()) {
           ctx.on_event("local_vision",

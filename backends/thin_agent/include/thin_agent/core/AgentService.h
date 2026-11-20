@@ -7,6 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -46,6 +47,7 @@
 #include "thin_agent/core/PatrolProbe.h"
 #include "thin_agent/core/PathValidator.h"
 #include "thin_agent/llm/CurlHttpClient.h"
+#include "thin_agent/core/LocalLlmSidecar.h"
 #include "thin_agent/RuntimePaths.h"
 
 namespace thin_agent {
@@ -194,7 +196,7 @@ class AgentService {
   /// 热切换当前聊天首选本地模型（卸载其它 GGUF 并加载目标）。
   nlohmann::json switch_local_model(const std::string& name);
 
-  /// 当前逻辑通道名（如 lmstudio_demo）。
+  /// 当前逻辑通道名（如 lmstudio_mode）。
   std::string active_channel() const;
 
   /// 线程安全配置快照（长耗时云调用前可拷贝）。
@@ -454,6 +456,9 @@ class AgentService {
 
   /// v0.50.5: 构造函数 467 行按功能段拆出的初始化域方法（同类内，纯可读性，
   /// 语义零变化——各段原本就是构造函数体内按注释块分界的顺序步骤）。
+  /// 按 cfg.sidecar_* 确保/回收托管 llama-server；返回 warning 文案（可空）。
+  std::string ensure_llm_sidecar(const DemoConfigCompat& cfg);
+
   void init_local_models();       ///< 本地 ModelPool 注册（Template/Qwen/Gemma + 异步预加载）
   void init_memory_rag();         ///< RAG 记忆（embedding 选择 + MemoryManager + summarizer）
   void init_subsystems();         ///< checkpoint/goal/correction/monitor/skill 维护/凭证池/webhook/缓存
@@ -566,6 +571,9 @@ public:
   std::unique_ptr<SessionStore> session_store_;                ///< v0.27.6: 会话搜索存储
   PatrolConfig patrol_config_;                                 ///< v0.27.7: 巡检配置
   std::unique_ptr<CurlHttpClient> http_client_;                ///< HTTP 客户端（CloudEmbeddingProvider 等组件的生命周期宿主）
+  std::unique_ptr<LocalLlmSidecar> llm_sidecar_;               ///< 托管 llama-server（local_tools_mode）
+  std::mutex sidecar_mu_;                                      ///< 保护 llm_sidecar_ 启停（boot/chat 并发）
+  std::thread sidecar_boot_thread_;                            ///< 后台拉起 sidecar，避免阻塞 /health
   SkillRegistry skill_registry_;                               ///< Skill/Action 注册表
   std::atomic<int> sub_agent_counter_{0};                      ///< 子 Agent 计数
   std::atomic<int> next_id_counter_{0};                        ///< v0.11.6: 通用ID计数

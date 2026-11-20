@@ -89,6 +89,9 @@ AgentService::~AgentService() {
   /// ——此前 stop 不存在:execute_async per-request detach 捕 this,
   /// AgentService 析构后继续跑=UAF(第 7 例线程停机闸)
   if (orchestrator_) orchestrator_->stop();
+  // 先打断 wait_healthy，再 join，避免退出时卡在 180s 就绪等待上。
+  if (llm_sidecar_) llm_sidecar_->stop();
+  if (sidecar_boot_thread_.joinable()) sidecar_boot_thread_.join();
 }
 
 AgentService::AgentService(DemoConfigCompat cfg,
@@ -104,13 +107,27 @@ AgentService::AgentService(DemoConfigCompat cfg,
   init_subsystems();
   init_cron();
   init_tools_and_context();
+  // sidecar 异步拉起：不阻塞 listen//health（模型加载常 >15s）。
+  // 首轮对话 / switch_profile 仍会 ensure_llm_sidecar 同步等待就绪。
+  if (cfg_.sidecar_enabled) {
+    sidecar_boot_thread_ = std::thread([this]() {
+      try {
+        const std::string warn = ensure_llm_sidecar(cfg_snapshot());
+        if (!warn.empty()) std::cerr << "[WARN] " << warn << std::endl;
+      } catch (const std::exception& e) {
+        std::cerr << "[WARN] sidecar boot failed: " << e.what() << std::endl;
+      } catch (...) {
+        std::cerr << "[WARN] sidecar boot failed" << std::endl;
+      }
+    });
+  }
 }
 
 void AgentService::set_config_source(const std::string& yaml_path,
                                      const std::string& channel) {
   std::lock_guard<std::mutex> lk(cfg_mu_);
   config_yaml_path_ = yaml_path;
-  if (!channel.empty()) active_channel_ = channel;
+  if (!channel.empty()) active_channel_ = canonicalize_access_profile(channel);
 }
 
 std::string AgentService::active_channel() const {
@@ -161,15 +178,28 @@ nlohmann::json AgentService::list_channel_profiles() const {
 namespace {
 
 bool probe_local_openai_endpoint(const std::string& api_base) {
-  std::string base = api_base.empty() ? "http://127.0.0.1:1234/v1" : api_base;
-  while (!base.empty() && base.back() == '/') base.pop_back();
-  const std::string url = base + "/models";
-  CurlHttpClient http(2000);
-  auto resp = http.get(url, "");
-  return resp.ok && resp.status_code >= 200 && resp.status_code < 300;
+  return LocalLlmSidecar::probe(api_base, 2000);
 }
 
 }  // namespace
+
+std::string AgentService::ensure_llm_sidecar(const DemoConfigCompat& cfg) {
+  LocalLlmSidecar* sc = nullptr;
+  {
+    std::lock_guard<std::mutex> lk(sidecar_mu_);
+    if (!cfg.sidecar_enabled) {
+      if (llm_sidecar_ && llm_sidecar_->owned()) llm_sidecar_->stop();
+      return {};
+    }
+    if (!llm_sidecar_) llm_sidecar_ = std::make_unique<LocalLlmSidecar>();
+    sc = llm_sidecar_.get();
+  }
+  std::string err;
+  if (sc->ensure_running(cfg, &err)) return {};
+  if (err.empty()) err = "sidecar_start_failed";
+  return "本地 sidecar 未就绪：" + err +
+         "（请检查 llama-server 路径与 GGUF，或手动启动后重试）";
+}
 
 namespace {
 
@@ -307,18 +337,34 @@ nlohmann::json AgentService::switch_channel(const std::string& channel) {
   {
     std::lock_guard<std::mutex> lk(cfg_mu_);
     cfg_ = loaded;
-    active_channel_ = channel;
+    active_channel_ = canonicalize_access_profile(channel);
   }
 
   std::string warning;
   const std::string prov = normalize_provider(loaded.provider);
   bool local_ok = false;
   bool probed = false;
+  bool sidecar_ok = false;
+
+  if (loaded.sidecar_enabled) {
+    warning = ensure_llm_sidecar(loaded);
+    sidecar_ok = warning.empty();
+  } else {
+    std::lock_guard<std::mutex> lk(sidecar_mu_);
+    if (llm_sidecar_ && llm_sidecar_->owned()) llm_sidecar_->stop();
+  }
+
   if (prov == "lmstudio") {
     probed = true;
-    local_ok = probe_local_openai_endpoint(loaded.api_base);
-    if (!local_ok) {
-      warning = "本地端点不可达，请先启动 llama-server（默认 http://127.0.0.1:1234）";
+    const std::string base = loaded.sidecar_enabled
+                                 ? LocalLlmSidecar::make_api_base(loaded)
+                                 : loaded.api_base;
+    local_ok = probe_local_openai_endpoint(base);
+    if (!local_ok && warning.empty()) {
+      warning = loaded.sidecar_enabled
+                    ? "本地 sidecar 端点不可达"
+                    : "本地端点不可达，请先启动 llama-server（默认 http://127.0.0.1:1234）"
+                          "，或切换 local_tools_mode 由服务托管拉起";
     }
   } else if (loaded.mode != "offline" && !loaded.api_key_env.empty() &&
              prov != "lmstudio") {
@@ -338,6 +384,11 @@ nlohmann::json AgentService::switch_channel(const std::string& channel) {
       {"model", loaded.model_name},
       {"api_base", loaded.api_base},
   };
+  if (loaded.sidecar_enabled) {
+    out["sidecar_enabled"] = true;
+    out["sidecar_ok"] = sidecar_ok;
+    out["api_base"] = LocalLlmSidecar::make_api_base(loaded);
+  }
   if (probed) out["local_endpoint_ok"] = local_ok;
   if (!warning.empty()) out["warning"] = warning;
   return out;

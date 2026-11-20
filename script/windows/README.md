@@ -25,7 +25,7 @@ script\windows\start-windows.bat
 
 1. 若 `thin_agent.exe` 旁边没有 `onnxruntime.dll`，从 `backends\thin_agent\third_party\onnxruntime\lib` 复制一份。
 2. 配置优先用 `%USERPROFILE%\.thin_agent\demo.model.yaml`。这个文件不存在时，用仓库里的 `backends\thin_agent\config\demo.model.yaml`。
-3. 使用 profile `offline_demo`，监听 `127.0.0.1:8765`。这个 profile 不需要 API key。
+3. 默认 profile `local_tools_mode`，监听 `127.0.0.1:8765`。会后台托管拉起本地 llama-server（无需 API key）。缺 llama-server/GGUF 或家目录旧 YAML 无此 profile 时自动回退 `offline_mode` / 仓库配置。
 4. 若 `%USERPROFILE%\.thin_agent\profiles\<profile>\config\chat_policy.json` 还不存在，从仓库复制一份。已有文件不会覆盖。
 5. 后端若已在该端口健康，则不再启动第二个进程。
 6. 健康检查通过后打开 `zing_agent`。界面默认连接 `ws://127.0.0.1:8765/ws`。
@@ -51,7 +51,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File script\windows\start-windows
 
 | 参数 | 默认值 | 作用 |
 | --- | --- | --- |
-| `-AgentProfile` | `offline_demo` | `demo.model.yaml` 里的 profile。`-Profile` 是同一参数的别名。 |
+| `-AgentProfile` | `local_tools_mode` | `demo.model.yaml` 里的 profile。`-Profile` 是同一参数的别名。 |
 | `-Port` | `8765` | 监听端口。 |
 | `-BindHost` | `127.0.0.1` | 监听地址。 |
 | `-NoGui` | 关 | 只启动后端，不打开 `zing_agent`。 |
@@ -59,22 +59,25 @@ powershell -NoProfile -ExecutionPolicy Bypass -File script\windows\start-windows
 
 云端 profile（例如 `deepseek_fast_demo`）需要对应的 API key 环境变量。密钥放在配置或环境里，不要写进这个脚本。更完整的密钥/第三方清单见仓库根目录 [`THIRD_PARTY.md`](../../THIRD_PARTY.md)。
 
-## 本地对话：三选一
+## 本地对话：访问模式
 
 | 方式 | 何时用 | 要不要 `llama-server` | 配置 / 通道 |
 | --- | --- | --- | --- |
-| **A. 进程内 GGUF** | 推荐本机离线聊天 | **不需要** | 启动 `offline_demo`；`THIN_AGENT_WITH_LLAMA_CPP=ON` 编过；GGUF 放在 `models/gguf/` |
-| **B. 外挂 OpenAI 兼容端点** | 对齐 LM Studio / 单独调试 server | **需要** | 侧栏切 `lmstudio_demo`（`http://127.0.0.1:1234/v1`） |
-| **C. 云端 API** | 智谱 / DeepSeek 等 | 不需要本地权重 | 侧栏切对应 profile，并设置 `api_key_env` 环境变量 |
+| **A. 进程内 GGUF** | 推荐本机离线聊天 | **不需要** | 启动 `offline_mode`；`THIN_AGENT_WITH_LLAMA_CPP=ON` 编过；GGUF 放在 `models/gguf/` |
+| **B. 托管 sidecar** | 需要模型自主 tools | **自动拉起** | 侧栏切 `local_tools_mode` |
+| **C. 外挂 OpenAI 兼容端点** | 对齐 LM Studio / 单独调试 server | **需自行启动** | 侧栏切 `lmstudio_mode`（`http://127.0.0.1:1234/v1`） |
+| **D. 云端 API** | 智谱 / DeepSeek / 自建网关 | 不需要本地权重 | `cloud_api_mode` 或 `zai_*` / `deepseek_*`，并设置 `api_key_env` |
 
 侧栏「模型通道」热切换只改进程内路由，**不**迁移会话/记忆目录（数据目录仍跟启动时的 `-AgentProfile`）。协议：`list_profiles` / `switch_profile`。
 
-侧栏「本地模型」可在已注册的进程内 GGUF（如 Aurum / Qwen）之间热切换：`list_local_models` / `switch_local_model`（会卸载其它 GGUF 并加载所选模型）。需 `offline_demo`（或走 HybridRouter 的离线路径）且 `THIN_AGENT_WITH_LLAMA_CPP=ON`。
+侧栏「本地模型」可在已注册的进程内 GGUF（如 Aurum / Qwen）之间热切换：`list_local_models` / `switch_local_model`（会卸载其它 GGUF 并加载所选模型）。需 `offline_mode`（或走 HybridRouter 的离线路径）且 `THIN_AGENT_WITH_LLAMA_CPP=ON`。
 
 | 展示名（约） | profile | 说明 |
 | --- | --- | --- |
-| 离线规则 / 进程内 GGUF | `offline_demo` | 默认；有 GGUF 且 ON 编译时走 HybridRouter→Aurum |
-| 本地 Aurum（lmstudio） | `lmstudio_demo` | 外挂 `127.0.0.1:1234`；端点不通时 UI 会提示 |
+| 离线 / 进程内 GGUF | `offline_mode` | 有 GGUF 且 ON 编译时走 HybridRouter→Aurum |
+| 本地 Tools（sidecar） | `local_tools_mode` | **start-windows 默认**；thin_agent 托管拉起 llama-server |
+| 外接 LM Studio | `lmstudio_mode` | 外挂 `127.0.0.1:1234`；端点不通时 UI 会提示 |
+| 云 API（OpenAI 兼容） | `cloud_api_mode` | 自建/代理网关 |
 | 智谱 / DeepSeek 等 | `zai_*` / `deepseek_*` | 需 `GLM_API_KEY`、`DEEPSEEK_API_KEY` 等 |
 
 profile 定义在 `backends\thin_agent\config\demo.model.yaml`（或 `%USERPROFILE%\.thin_agent\demo.model.yaml`）。

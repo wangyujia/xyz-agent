@@ -651,7 +651,7 @@ int main(int argc, char** argv) {
                 << "  --auth-token <t>  Require token for WS/HTTP (or THIN_AGENT_AUTH_TOKEN env)\n"
                 << "  --port <port>     Listen port (default: 8765)\n"
                 << "  --config <path>   YAML model config (default: ~/.thin_agent/demo.model.yaml)\n"
-                << "  --profile <name>  Profile name in config (default: offline_demo)\n"
+                << "  --profile <name>  Profile name in config (default: offline_mode)\n"
                 << "  --mcp             Run as MCP server (stdio JSON-RPC)\n"
                 << "  -h, --help        Show this help\n\n"
                 << "Environment:\n"
@@ -665,7 +665,7 @@ int main(int argc, char** argv) {
     if (a == "--mcp") {
       // MCP Server 模式：stdio JSON-RPC，不启动 Mongoose WS 服务
       std::string mcp_config = thin_agent::default_demo_model_config_path();
-      std::string mcp_profile = "offline_demo";
+      std::string mcp_profile = "offline_mode";
       for (int j = i + 1; j < argc; ++j) {
         std::string aa = argv[j];
         if (aa == "--config" && j + 1 < argc) mcp_config = argv[++j];
@@ -718,7 +718,7 @@ int main(int argc, char** argv) {
   std::string host = "127.0.0.1";
   int port = 8765;
   std::string config = thin_agent::default_demo_model_config_path();
-  std::string profile = "offline_demo";
+  std::string profile = "offline_mode";
 
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];

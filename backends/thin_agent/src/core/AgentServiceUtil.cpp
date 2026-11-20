@@ -17,6 +17,7 @@
 #include <fstream>
 #include <deque>
 #include <cctype>
+#include <cstring>
 #include <regex>
 #include <thread>
 #ifndef _WIN32

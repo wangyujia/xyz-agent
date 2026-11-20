@@ -95,7 +95,7 @@ cd ~/build_xyz && ctest --timeout 150 -j4
 ```bash
 cd /path/to/xyz-agent                                             # 下面用相对路径，先切到仓根
 export THIN_AGENT_HOME=/path/to/xyz-agent/backends/thin_agent_home   # 见下文「运行时 home」
-~/build_xyz/thin_agent --config backends/thin_agent/config/demo.model.yaml --profile offline_demo
+~/build_xyz/thin_agent --config backends/thin_agent/config/demo.model.yaml --profile offline_mode
 ```
 
 其余入口（CLI、端云协同、冒烟）见 **`backends/thin_agent/README.md`** 的「快速上手（15 分钟）」。

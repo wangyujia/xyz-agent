@@ -13,7 +13,7 @@
 // 加载 YAML profile → 校验 provider → 跑一轮 FakeDeviceControl 动作冒烟（switch_mode / 拍照 / 取结果）。
 
 int main(int argc, char** argv) {
-  std::string profile = "offline_demo";
+  std::string profile = "offline_mode";
   if (argc >= 2) profile = argv[1];
 
   const auto cfg = thin_agent::load_demo_profile(thin_agent::default_demo_model_config_path(), profile);

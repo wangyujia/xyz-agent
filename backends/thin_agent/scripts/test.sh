@@ -231,7 +231,7 @@ EOF
     echo -e "  ${YELLOW}▶ E2E: multi_turn (多轮对话槽位填充)${NC}"
     # multi_turn 需要一个 offline profile 的 agent
     build/thin_agent --host 127.0.0.1 --port "$((agent_port + 20))" \
-        --config config/demo.model.yaml --profile offline_demo &
+        --config config/demo.model.yaml --profile offline_mode &
     agent_pid=$!
     sleep 2
 
@@ -428,10 +428,10 @@ layer3_system() {
     }
     trap cleanup RETURN
 
-    # 使用 offline_demo profile（无需 mock server，完整本地功能）
+    # 使用 offline_mode profile（无需 mock server，完整本地功能）
     echo -e "  ${YELLOW}▶ 启动 thin_agent (port $agent_port, offline profile)${NC}"
     build/thin_agent --host 127.0.0.1 --port "$agent_port" \
-        --config config/demo.model.yaml --profile offline_demo &
+        --config config/demo.model.yaml --profile offline_mode &
     agent_pid=$!
     sleep 2
 

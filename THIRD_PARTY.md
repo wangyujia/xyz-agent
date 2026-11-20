@@ -128,7 +128,7 @@ python3 scripts/intent/eval_golden.py              # 黄金集评测（通过即
 
 放置到 `backends/thin_agent/models/gguf/`（`.gitignore` 忽略）。用途：
 
-- **Windows 推荐**：进程内 `GgufModel`（`offline_demo` + `THIN_AGENT_WITH_LLAMA_CPP=ON`）懒加载 **Aurum → Qwen**；或外挂 `llama-server` + `lmstudio_demo`。
+- **Windows 推荐**：进程内 `GgufModel`（`offline_mode` + `THIN_AGENT_WITH_LLAMA_CPP=ON`）懒加载 **Aurum → Qwen**；或外挂 `llama-server` + `lmstudio_mode` / 托管 sidecar `local_tools_mode`。
 - **历史 Linux 级联**：Template → ONNX intent → Qwen → Gemma（见 CHANGELOG）；云模式不需要 GGUF。
 
 #### 已核验下载（Windows 本机，2026-11-18）

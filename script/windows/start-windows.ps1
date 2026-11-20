@@ -6,7 +6,7 @@
 #   powershell -ExecutionPolicy Bypass -File script\windows\start-windows.ps1 -Stop
 param(
   [Alias("Profile")]
-  [string]$AgentProfile = "offline_demo",
+  [string]$AgentProfile = "local_tools_mode",
   [int]$Port = 8765,
   [string]$BindHost = "127.0.0.1",
   [switch]$NoGui,
@@ -57,6 +57,37 @@ function Test-WebView2 {
   return $false
 }
 
+function Test-YamlHasProfile([string]$YamlPath, [string]$Profile) {
+  if (-not (Test-Path $YamlPath)) { return $false }
+  $pat = '^\s{2}' + [regex]::Escape($Profile) + '\s*:'
+  return $null -ne (Select-String -Path $YamlPath -Pattern $pat -SimpleMatch:$false | Select-Object -First 1)
+}
+
+function Get-YamlScalar([string]$YamlPath, [string]$Profile, [string]$Key) {
+  if (-not (Test-Path $YamlPath)) { return $null }
+  $lines = Get-Content -Path $YamlPath -ErrorAction SilentlyContinue
+  $inProfiles = $false
+  $inTarget = $false
+  foreach ($line in $lines) {
+    if ($line -match '^profiles\s*:') { $inProfiles = $true; continue }
+    if (-not $inProfiles) { continue }
+    if ($line -match ('^\s{2}' + [regex]::Escape($Profile) + '\s*:')) {
+      $inTarget = $true
+      continue
+    }
+    if ($inTarget -and $line -match '^\s{2}\S') { break }
+    if ($inTarget -and $line -match ('^\s{4}' + [regex]::Escape($Key) + '\s*:\s*(.*)$')) {
+      $v = $Matches[1].Trim()
+      if ($v -match '\s+#') { $v = ($v -split '\s+#', 2)[0].Trim() }
+      if (($v.StartsWith('"') -and $v.EndsWith('"')) -or ($v.StartsWith("'") -and $v.EndsWith("'"))) {
+        $v = $v.Substring(1, $v.Length - 2)
+      }
+      return $v
+    }
+  }
+  return $null
+}
+
 if (-not (Test-Path $AgentExe)) {
   Write-Host "找不到 $AgentExe"
   Write-Host "先在 backends\thin_agent 里用 Visual Studio 编出 Release 的 thin_agent。"
@@ -92,6 +123,44 @@ $HomeConfig = Join-Path $env:USERPROFILE ".thin_agent\demo.model.yaml"
 $Config = $RepoConfig
 if (Test-Path $HomeConfig) { $Config = $HomeConfig }
 
+# 家目录旧 YAML 可能没有 *_mode 键：缺 profile 时回退仓库配置。
+if (-not (Test-YamlHasProfile $Config $AgentProfile)) {
+  if ((Test-Path $RepoConfig) -and -not (Test-SamePath $Config $RepoConfig) -and
+      (Test-YamlHasProfile $RepoConfig $AgentProfile)) {
+    Write-Host "配置 $Config 缺少 profile '$AgentProfile'，改用仓库配置 $RepoConfig"
+    $Config = $RepoConfig
+  } elseif ($AgentProfile -eq "local_tools_mode" -and (Test-YamlHasProfile $Config "offline_mode")) {
+    Write-Host "配置缺少 local_tools_mode，回退 offline_mode"
+    $AgentProfile = "offline_mode"
+  } elseif ($AgentProfile -eq "local_tools_mode" -and (Test-YamlHasProfile $Config "offline_demo")) {
+    Write-Host "配置仍是旧键，回退 offline_demo（加载器会映射到 offline_mode，若 YAML 仅有旧键则需更新）"
+    $AgentProfile = "offline_demo"
+  }
+}
+
+# local_tools_mode 依赖 sidecar：缺二进制/模型时预先回退，避免“健康但对话挂”。
+if ($AgentProfile -eq "local_tools_mode") {
+  $server = Get-YamlScalar $Config "local_tools_mode" "sidecar_server_path"
+  $model = Get-YamlScalar $Config "local_tools_mode" "sidecar_model_path"
+  if (-not $server) { $server = "C:/deps-thin-agent/llama.cpp/bin/llama-server.exe" }
+  if (-not $model) { $model = "models/gguf/aurum-brain-q4_k_m.gguf" }
+  $modelAbs = $model
+  if (-not [IO.Path]::IsPathRooted($modelAbs)) {
+    $modelAbs = Join-Path $AgentRoot $model
+  }
+  $missing = @()
+  if (-not (Test-Path $server)) { $missing += "llama-server=$server" }
+  if (-not (Test-Path $modelAbs)) { $missing += "gguf=$modelAbs" }
+  if ($missing.Count -gt 0) {
+    Write-Host "local_tools_mode 依赖缺失：$($missing -join '; ')"
+    Write-Host "回退到 offline_mode（进程内 GGUF / 规则）。"
+    $AgentProfile = "offline_mode"
+    if (-not (Test-YamlHasProfile $Config "offline_mode") -and (Test-YamlHasProfile $RepoConfig "offline_mode")) {
+      $Config = $RepoConfig
+    }
+  }
+}
+
 $PolicyDir = Join-Path $env:USERPROFILE ".thin_agent\profiles\$AgentProfile\config"
 $PolicyDst = Join-Path $PolicyDir "chat_policy.json"
 if ((Test-Path $RepoPolicy) -and -not (Test-Path $PolicyDst)) {
@@ -111,20 +180,24 @@ if ($already) {
     "--config", $Config,
     "--profile", $AgentProfile
   )
+  # sidecar 已改为异步拉起，/health 应很快就绪；仍给足缓冲（约 60s）。
   $ok = $false
-  for ($i = 0; $i -lt 30; $i++) {
+  for ($i = 0; $i -lt 120; $i++) {
     Start-Sleep -Milliseconds 500
     if (Test-AgentHealth) { $ok = $true; break }
   }
   if (-not $ok) {
-    Write-Host "后端没有在 15 秒内就绪。日志：$Log"
+    Write-Host "后端没有在 60 秒内就绪。日志：$Log"
     if (Test-Path $Log) {
       Write-Host "----- 日志末尾 -----"
-      Get-Content $Log -Tail 30
+      Get-Content $Log -Tail 40
     }
     exit 1
   }
   Write-Host "后端就绪  ws://${BindHost}:${Port}/ws"
+  if ($AgentProfile -eq "local_tools_mode") {
+    Write-Host "提示：llama-server 在后台加载模型，首轮对话可能多等一会儿。"
+  }
 }
 
 if ($NoGui) { exit 0 }

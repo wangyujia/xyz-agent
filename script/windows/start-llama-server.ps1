@@ -1,4 +1,4 @@
-# 启动本地 llama-server（OpenAI 兼容，默认监听 1234），供 thin_agent lmstudio_demo 通道使用。
+# 启动本地 llama-server（OpenAI 兼容，默认监听 1234），供 thin_agent lmstudio_mode 通道使用。
 # 用法：
 #   powershell -ExecutionPolicy Bypass -File script\windows\start-llama-server.ps1
 #   powershell -ExecutionPolicy Bypass -File script\windows\start-llama-server.ps1 -Port 1234 -GpuLayers 99

@@ -73,9 +73,23 @@ struct DemoConfigCompat {
   /// false（默认）时纯文本模型忽略图片字段。
   bool vision{false};
 
+  /// 托管 llama-server sidecar（local_tools_mode）：由 thin_agent 启停，
+  /// 走与 lmstudio 相同的 OpenAI tools/tool_calls 路径。
+  bool sidecar_enabled{false};
+  std::string sidecar_server_path;   ///< llama-server 可执行文件；空则探测默认路径
+  std::string sidecar_model_path;    ///< GGUF 路径
+  std::string sidecar_host{"127.0.0.1"};
+  int sidecar_port{1234};
+  int sidecar_n_ctx{0};              ///< 0=模型默认
+  int sidecar_n_gpu_layers{-1};      ///< <0 不传 -ngl；0=CPU
+  int sidecar_ready_timeout_ms{120000};
+
   /// 校验 mode、provider、预算字段等是否在允许范围内。
   bool valid() const;
 };
+
+/// 访问模式旧名兼容：offline_demo → offline_mode 等（其它 profile 原样返回）。
+std::string canonicalize_access_profile(std::string profile);
 
 /// 轻量 YAML profile 解析器，读取 config/demo.model.yaml 中指定 profile 块。
 /// @throws std::runtime_error 文件打不开或 profile 不存在
@@ -83,7 +97,7 @@ DemoConfigCompat load_demo_profile_compat(const std::string& yaml_path, const st
 
 /// 配置通道列表项（供 UI 下拉 / list_profiles）。
 struct DemoProfileInfo {
-  std::string name;         ///< profile 键名，如 lmstudio_demo
+  std::string name;         ///< profile 键名，如 lmstudio_mode
   std::string mode;         ///< offline / cloud / auto
   std::string provider;     ///< 云/本地 provider
   std::string model;        ///< 模型名（可空，如 lmstudio 用当前加载模型）

@@ -44,6 +44,14 @@ bool starts_with(const std::string& s, const std::string& p) { return s.rfind(p,
 
 }  // namespace
 
+std::string canonicalize_access_profile(std::string profile) {
+  if (profile == "offline_demo") return "offline_mode";
+  if (profile == "local_tools_demo") return "local_tools_mode";
+  if (profile == "lmstudio_demo") return "lmstudio_mode";
+  if (profile == "openai_compatible_demo") return "cloud_api_mode";
+  return profile;
+}
+
 bool DemoConfigCompat::valid() const {
   if (mode != "offline" && mode != "cloud" && mode != "auto") return false;
   if (mode == "offline") return true;
@@ -57,6 +65,7 @@ bool DemoConfigCompat::valid() const {
 }
 
 DemoConfigCompat load_demo_profile_compat(const std::string& yaml_path, const std::string& profile) {
+  const std::string resolved = canonicalize_access_profile(profile);
   std::ifstream in(yaml_path);
   if (!in.is_open()) in.open("../" + yaml_path);
   if (!in.is_open()) throw std::runtime_error("cannot open config: " + yaml_path);
@@ -70,7 +79,7 @@ DemoConfigCompat load_demo_profile_compat(const std::string& yaml_path, const st
     if (starts_with(line, "profiles:")) { in_profiles = true; continue; }
     if (!in_profiles) continue;
 
-    const std::string ptag = "  " + profile + ":";
+    const std::string ptag = "  " + resolved + ":";
     if (line == ptag) { in_target = true; continue; }
 
     if (in_target) {
@@ -103,6 +112,17 @@ DemoConfigCompat load_demo_profile_compat(const std::string& yaml_path, const st
       if (auto v = pick("pipeline_enable_rollback_hook"); !v.empty()) cfg.pipeline_enable_rollback_hook = (v == "true" || v == "True" || v == "1");
       if (auto v = pick("external_provider"); !v.empty()) cfg.external_provider = v;
       if (auto v = pick("external_weather_url"); !v.empty()) cfg.external_weather_url = v;
+      if (auto v = pick("sidecar_enabled"); !v.empty())
+        cfg.sidecar_enabled = (v == "true" || v == "True" || v == "1");
+      if (auto v = pick("sidecar_server_path"); !v.empty()) cfg.sidecar_server_path = v;
+      if (auto v = pick("sidecar_model_path"); !v.empty()) cfg.sidecar_model_path = v;
+      if (auto v = pick("sidecar_host"); !v.empty()) cfg.sidecar_host = v;
+      if (auto v = pick("sidecar_port"); !v.empty()) cfg.sidecar_port = std::stoi(v);
+      if (auto v = pick("sidecar_n_ctx"); !v.empty()) cfg.sidecar_n_ctx = std::stoi(v);
+      if (auto v = pick("sidecar_n_gpu_layers"); !v.empty())
+        cfg.sidecar_n_gpu_layers = std::stoi(v);
+      if (auto v = pick("sidecar_ready_timeout_ms"); !v.empty())
+        cfg.sidecar_ready_timeout_ms = std::stoi(v);
 
       // cloud_providers 列表解析
       if (starts_with(line, "    cloud_providers:")) {
@@ -150,16 +170,21 @@ DemoConfigCompat load_demo_profile_compat(const std::string& yaml_path, const st
     }
   }
 
-  if (!in_target) throw std::runtime_error("profile not found: " + profile);
+  if (!in_target) throw std::runtime_error("profile not found: " + resolved);
   return cfg;
 }
 
 namespace {
 
 std::string profile_label_for(const DemoProfileInfo& info) {
-  if (info.name == "offline_demo") return "离线规则";
-  if (info.name == "lmstudio_demo" || info.provider == "lmstudio")
-    return "本地 Aurum（lmstudio）";
+  if (info.name == "offline_mode" || info.name == "offline_demo") return "离线 / 进程内 GGUF";
+  if (info.name == "local_tools_mode" || info.name == "local_tools_demo")
+    return "本地 Tools（sidecar）";
+  if (info.name == "lmstudio_mode" || info.name == "lmstudio_demo")
+    return "外接 LM Studio";
+  if (info.name == "cloud_api_mode" || info.name == "openai_compatible_demo")
+    return "云 API（OpenAI 兼容）";
+  if (info.provider == "lmstudio") return "本地 OpenAI 端点";
   if (info.name.find("zai_") == 0 || info.provider.find("openai-compatible") == 0) {
     if (info.model.find("glm") != std::string::npos || info.name.find("zai") != std::string::npos)
       return "智谱 " + (info.model.empty() ? info.name : info.model);

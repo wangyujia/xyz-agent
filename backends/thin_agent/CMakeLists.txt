@@ -146,6 +146,7 @@ add_library(thin_agent_core
   src/core/SyntaxChecker.cpp
   src/core/PseudoTerminal.cpp
   src/core/BackgroundProcessManager.cpp
+  src/core/LocalLlmSidecar.cpp
   src/core/SecurityRedactor.cpp
   src/core/CommandValidator.cpp
   src/core/SandboxExecutor.cpp
