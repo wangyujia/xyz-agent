@@ -208,7 +208,11 @@ std::string AgentService::ensure_llm_sidecar(const DemoConfigCompat& cfg) {
     sc = llm_sidecar_.get();
   }
   std::string err;
-  if (sc->ensure_running(cfg, &err)) return {};
+  if (sc->ensure_running(cfg, &err)) {
+    const int n_ctx = LocalLlmSidecar::fetch_n_ctx(LocalLlmSidecar::make_api_base(cfg));
+    if (n_ctx > 0) cached_n_ctx_.store(n_ctx);
+    return {};
+  }
   if (err.empty()) err = "sidecar_start_failed";
   return "本地 sidecar 未就绪：" + err +
          "（请检查 llama-server 路径与 GGUF，或手动启动后重试）";
@@ -390,6 +394,28 @@ nlohmann::json AgentService::switch_channel(const std::string& channel) {
     }
   }
 
+  int n_ctx = 0;
+  if (prov == "lmstudio") {
+    const std::string base = loaded.sidecar_enabled
+                                 ? LocalLlmSidecar::make_api_base(loaded)
+                                 : loaded.api_base;
+    if (local_ok || sidecar_ok) n_ctx = LocalLlmSidecar::fetch_n_ctx(base);
+  } else if (loaded.mode == "offline") {
+    // 进程内 GGUF：用当前 preferred 的 n_ctx
+    for (const auto& st : thin_agent::local::ModelPool::instance().status_all()) {
+      if (st.value("backend", "") != "gguf") continue;
+      if (st.value("name", "") ==
+          thin_agent::local::ModelPool::instance().preferred_chat()) {
+        n_ctx = st.value("n_ctx", 0);
+        if (n_ctx <= 0) n_ctx = st.value("n_ctx_train", 0);
+        break;
+      }
+    }
+  } else if (!loaded.model_name.empty()) {
+    n_ctx = infer_context_window(loaded.model_name);
+  }
+  if (n_ctx > 0) cached_n_ctx_.store(n_ctx);
+
   nlohmann::json out = {
       {"type", "profile_switched"},
       {"ok", true},
@@ -406,6 +432,7 @@ nlohmann::json AgentService::switch_channel(const std::string& channel) {
     out["api_base"] = LocalLlmSidecar::make_api_base(loaded);
   }
   if (probed) out["local_endpoint_ok"] = local_ok;
+  if (n_ctx > 0) out["n_ctx"] = n_ctx;
   if (!warning.empty()) out["warning"] = warning;
   return out;
 }
@@ -1378,7 +1405,28 @@ nlohmann::json AgentService::status_payload() const {
     channel = active_channel_;
   }
   std::string local_model = thin_agent::local::ModelPool::instance().preferred_chat();
-  return {
+  int n_ctx = cached_n_ctx_.load();
+  if (n_ctx <= 0 && snap.mode == "offline") {
+    for (const auto& st : thin_agent::local::ModelPool::instance().status_all()) {
+      if (st.value("backend", "") != "gguf") continue;
+      if (st.value("name", "") == local_model) {
+        n_ctx = st.value("n_ctx", 0);
+        if (n_ctx <= 0) n_ctx = st.value("n_ctx_train", 0);
+        break;
+      }
+    }
+  }
+  if (n_ctx <= 0 && normalize_provider(snap.provider) == "lmstudio") {
+    const std::string base = snap.sidecar_enabled
+                                 ? LocalLlmSidecar::make_api_base(snap)
+                                 : snap.api_base;
+    n_ctx = LocalLlmSidecar::fetch_n_ctx(base);
+    if (n_ctx > 0) cached_n_ctx_.store(n_ctx);
+  }
+  if (n_ctx <= 0 && !snap.model_name.empty())
+    n_ctx = infer_context_window(snap.model_name);
+
+  nlohmann::json out = {
       {"mode", snap.mode},
       {"provider", normalize_provider(snap.provider)},
       {"model", snap.model_name},
@@ -1393,6 +1441,8 @@ nlohmann::json AgentService::status_payload() const {
       {"allow_actions", {"health_report", "collect_logs", "switch_mode", "capture_photo", "start_recording", "stop_recording", "fetch_capture_results"}},
       {"sense", sense_payload()},
   };
+  if (n_ctx > 0) out["n_ctx"] = n_ctx;
+  return out;
 }
 
 nlohmann::json AgentService::memory_recent_payload(const std::string& session_id) const {

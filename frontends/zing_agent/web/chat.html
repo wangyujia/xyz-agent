@@ -147,41 +147,37 @@
       background: rgba(255,255,255,0.14);
       box-shadow: inset 0 0 0 1.5px rgba(255,255,255,0.35);
     }
-    .backend-box { margin-top: 10px; }
-    .backend-box select, .channel-box select {
-      width: 100%;
-      background: var(--side-hover);
-      color: var(--side-ink);
-      border: 1px solid var(--card-line);
-      border-radius: 8px;
-      padding: 6px 8px;
-      font-size: 12px;
-      outline: none;
-    }
-    .backend-box select option, .channel-box select option { color: var(--ink); }
-    .channel-box { margin-top: 10px; }
-    .channel-box .ch-label {
-      font-size: 11px;
-      color: var(--side-ink-soft);
-      margin-bottom: 4px;
-    }
-    .channel-meta {
-      margin-top: 5px;
-      font-size: 11px;
-      color: var(--side-ink-soft);
-      line-height: 1.35;
-      word-break: break-all;
-    }
-    .conn-row {
+    .active-backend {
+      margin-top: 12px;
       display: flex;
-      align-items: center;
-      gap: 7px;
-      margin-top: 8px;
-      font-size: 11.5px;
+      align-items: flex-start;
+      gap: 9px;
+      padding: 9px 10px;
+      border-radius: 9px;
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.12);
+      cursor: pointer;
+    }
+    .active-backend:hover { background: rgba(255,255,255,0.11); }
+    .active-backend .ab-text { min-width: 0; flex: 1; }
+    .active-backend .ab-name {
+      font-size: 12.5px;
+      font-weight: 650;
+      color: #fff;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .active-backend .ab-status {
+      margin-top: 2px;
+      font-size: 11px;
       color: var(--side-ink-soft);
+      line-height: 1.3;
     }
     .conn-dot {
       width: 8px; height: 8px; border-radius: 50%;
+      flex: none;
+      margin-top: 5px;
       background: var(--bad);
       box-shadow: 0 0 0 3px rgba(212,61,61,0.22);
       animation: pulse 2s infinite;
@@ -191,6 +187,85 @@
       box-shadow: 0 0 0 3px rgba(18,197,138,0.25);
     }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+
+    .settings-field { margin-bottom: 14px; }
+    .settings-field label {
+      display: block;
+      font-size: 12px;
+      color: var(--ink-soft);
+      margin-bottom: 5px;
+    }
+    .settings-field select, .settings-field .settings-meta {
+      width: 100%;
+    }
+    .settings-field select {
+      background: var(--card-bg-soft);
+      color: var(--ink);
+      border: 1px solid var(--card-line);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 13px;
+      outline: none;
+    }
+    .settings-meta {
+      margin-top: 5px;
+      font-size: 11.5px;
+      color: var(--ink-soft);
+      line-height: 1.35;
+      word-break: break-all;
+    }
+
+    .settings-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 80;
+      background: rgba(10, 14, 22, 0.45);
+      backdrop-filter: blur(2px);
+    }
+    .settings-overlay.open { display: flex; justify-content: center; align-items: stretch; }
+    .settings-page {
+      width: min(520px, 100%);
+      margin: 0 0 0 auto;
+      background: var(--card-bg);
+      color: var(--ink);
+      border-left: 1px solid var(--line);
+      box-shadow: -12px 0 40px rgba(0,0,0,0.18);
+      display: flex;
+      flex-direction: column;
+      max-height: 100%;
+    }
+    .settings-page header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+    }
+    .settings-page header h2 { font-size: 16px; font-weight: 650; }
+    .settings-page header button {
+      border: none;
+      background: transparent;
+      color: var(--ink-soft);
+      font-size: 18px;
+      cursor: pointer;
+      padding: 2px 8px;
+      border-radius: 6px;
+    }
+    .settings-page header button:hover { background: var(--card-bg-hover); color: var(--ink); }
+    .settings-page .settings-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 18px 28px;
+    }
+    .settings-section-title {
+      font-size: 11px;
+      font-weight: 650;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--ink-soft);
+      margin: 6px 0 10px;
+    }
 
     .new-chat-btn {
       margin: 12px 12px 6px;
@@ -246,11 +321,74 @@
     .session-item .del:hover { color: var(--bad); background: rgba(255,255,255,0.1); }
 
     .sidebar-foot {
-      padding: 10px 14px;
+      position: relative;
+      padding: 10px 12px;
       border-top: 1px solid var(--side-line);
+    }
+    .user-menu-btn {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border: none;
+      background: transparent;
+      color: var(--side-ink);
+      cursor: pointer;
+      padding: 6px 6px;
+      border-radius: 10px;
+      text-align: left;
+    }
+    .user-menu-btn:hover { background: var(--side-hover); }
+    .user-avatar {
+      width: 30px; height: 30px;
+      border-radius: 50%;
+      flex: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      color: #fff;
+      background: linear-gradient(135deg, #5a8fd4, #2b5290);
+    }
+    .user-menu-btn .user-meta { min-width: 0; flex: 1; }
+    .user-menu-btn .user-name {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: #fff;
+    }
+    .user-menu-btn .user-sub {
       font-size: 10.5px;
       color: var(--side-ink-faint);
+      margin-top: 1px;
     }
+    .user-menu {
+      display: none;
+      position: absolute;
+      left: 10px;
+      right: 10px;
+      bottom: calc(100% + 6px);
+      background: var(--card-bg);
+      color: var(--ink);
+      border: 1px solid var(--card-line);
+      border-radius: 10px;
+      box-shadow: 0 10px 28px rgba(0,0,0,0.22);
+      padding: 6px;
+      z-index: 40;
+    }
+    .user-menu.open { display: block; }
+    .user-menu button {
+      width: 100%;
+      border: none;
+      background: transparent;
+      text-align: left;
+      padding: 9px 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      color: var(--ink);
+      cursor: pointer;
+    }
+    .user-menu button:hover { background: var(--card-bg-hover); }
 
     /* ══ 主区 ══ */
     .main {
@@ -593,39 +731,47 @@
     .tool-ico svg { width: 16px; height: 16px; display: block; }
     .tool-ico:hover { background: var(--card-bg-hover); color: var(--ink); border-color: var(--card-line); }
     .tool-ico.danger:hover { color: var(--bad); }
-    .ctx-chip {
+    /* llama-server 风格：细线描边圆环（非实心甜甜圈），模型芯片左侧 */
+    .ctx-ring-btn {
+      --ring: rgba(255,255,255,0.78);
+      width: 28px; height: 28px;
+      padding: 0; margin: 0;
+      border: none;
+      background: transparent;
+      cursor: pointer;
       display: inline-flex;
       align-items: center;
-      gap: 8px;
-      border: 1px solid var(--card-line);
-      background: var(--card-bg);
-      color: var(--ink-soft);
-      border-radius: 999px;
-      padding: 4px 10px 4px 8px;
-      font-size: 11.5px;
-      cursor: pointer;
-      user-select: none;
-      max-width: 280px;
-    }
-    .ctx-chip:hover { border-color: var(--brand); color: var(--ink); }
-    .ctx-chip .ctx-bar {
-      width: 52px; height: 5px;
-      border-radius: 999px;
-      background: var(--card-line);
-      overflow: hidden;
+      justify-content: center;
       flex: none;
+      border-radius: 50%;
+      color: var(--ink-soft);
     }
-    .ctx-chip .ctx-bar > i {
-      display: block; height: 100%; width: 0%;
-      background: linear-gradient(90deg, var(--ok), var(--brand));
-      border-radius: inherit;
+    .ctx-ring-btn:hover { color: var(--ink); }
+    .ctx-ring-btn svg.ctx-ring {
+      width: 18px; height: 18px;
+      display: block;
+      transform: rotate(-90deg);
     }
-    .ctx-chip .ctx-bar.warn > i { background: #e8a23c; }
-    .ctx-chip .ctx-bar.hot > i { background: var(--bad); }
+    .ctx-ring-btn .track {
+      fill: none;
+      stroke: rgba(255,255,255,0.22);
+      stroke-width: 2;
+    }
+    .ctx-ring-btn .prog {
+      fill: none;
+      stroke: var(--ring);
+      stroke-width: 2;
+      stroke-linecap: round;
+      transition: stroke-dasharray .2s ease;
+    }
+    .ctx-ring-btn.warn { --ring: #e8a23c; }
+    .ctx-ring-btn.hot { --ring: var(--bad); }
+    [data-theme="light"] .ctx-ring-btn .track { stroke: rgba(0,0,0,0.18); }
+    [data-theme="light"] .ctx-ring-btn { --ring: rgba(0,0,0,0.65); }
     .ctx-panel {
       display: none;
       position: absolute;
-      right: 14px; bottom: calc(100% + 6px);
+      right: 14px; bottom: calc(100% + 8px);
       width: min(320px, calc(100% - 28px));
       background: var(--card-bg);
       border: 1px solid var(--card-line);
@@ -894,24 +1040,12 @@
   <div class="sidebar">
     <div class="sidebar-head">
       <h1>Zing Agent</h1>
-      <div class="backend-box">
-        <select id="backendSel" onchange="onBackendChange()"></select>
-      </div>
-      <div class="channel-box">
-        <div class="ch-label">模型通道</div>
-        <select id="channelSel" onchange="onChannelChange()" disabled>
-          <option value="">连接后加载…</option>
-        </select>
-        <div class="channel-meta" id="channelMeta">未选择</div>
-        <div class="ch-label" style="margin-top:8px">本地模型</div>
-        <select id="localModelSel" onchange="onLocalModelChange()" disabled>
-          <option value="">连接后加载…</option>
-        </select>
-        <div class="channel-meta" id="localModelMeta">进程内 GGUF</div>
-      </div>
-      <div class="conn-row">
+      <div class="active-backend" id="activeBackendRow" title="打开设置" onclick="openSettings()">
         <span id="connDot" class="conn-dot"></span>
-        <span id="connText">未连接</span>
+        <div class="ab-text">
+          <div class="ab-name" id="activeBackendName">本机后端</div>
+          <div class="ab-status" id="connText">未连接</div>
+        </div>
       </div>
       <div id="svcCard" style="display:none;margin-top:10px;padding:9px 10px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.15);border-radius:9px;font-size:11.5px;">
         <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -935,9 +1069,47 @@
     <div class="new-chat-btn" onclick="newSession()">＋ 新对话</div>
     <div class="session-list" id="sessionList"></div>
     <div class="sidebar-foot">
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <span>Zing Agent P1 · thin_agent 客户端</span>
-        <button id="themeBtn" title="切换主题" style="border:none;border-radius:6px;padding:2px 8px;background:rgba(255,255,255,0.1);color:var(--side-ink);cursor:pointer;font-size:12px;">🌗</button>
+      <button type="button" class="user-menu-btn" id="userMenuBtn" aria-haspopup="menu" aria-expanded="false">
+        <span class="user-avatar" aria-hidden="true">本</span>
+        <span class="user-meta">
+          <div class="user-name">本地用户</div>
+          <div class="user-sub">点击打开菜单</div>
+        </span>
+      </button>
+      <div class="user-menu" id="userMenu" role="menu">
+        <button type="button" data-action="settings" role="menuitem">设置</button>
+        <button type="button" data-action="theme" role="menuitem" id="themeBtn">切换主题</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="settings-overlay" id="settingsPage" aria-hidden="true">
+    <div class="settings-page" role="dialog" aria-label="用户设置">
+      <header>
+        <h2>用户设置</h2>
+        <button type="button" id="settingsCloseBtn" title="关闭" aria-label="关闭">×</button>
+      </header>
+      <div class="settings-body">
+        <div class="settings-section-title">后端与模型</div>
+        <div class="settings-field">
+          <label for="backendSel">连接后端</label>
+          <select id="backendSel" onchange="onBackendChange()"></select>
+          <div class="settings-meta" id="settingsBackendStatus">未连接</div>
+        </div>
+        <div class="settings-field">
+          <label for="channelSel">模型通道</label>
+          <select id="channelSel" onchange="onChannelChange()" disabled>
+            <option value="">连接后加载…</option>
+          </select>
+          <div class="settings-meta" id="channelMeta">未选择</div>
+        </div>
+        <div class="settings-field">
+          <label for="localModelSel">本地模型</label>
+          <select id="localModelSel" onchange="onLocalModelChange()" disabled>
+            <option value="">连接后加载…</option>
+          </select>
+          <div class="settings-meta" id="localModelMeta">进程内 GGUF</div>
+        </div>
       </div>
     </div>
   </div>
@@ -954,7 +1126,17 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
         </button>
         <button type="button" class="tool-ico" title="压缩上下文" aria-label="压缩上下文" onclick="quickCmd('/compact')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/><path d="M9 12h6"/></svg>
+          <!-- Lucide FoldVertical — llama.cpp webui Compact conversation 同款 (@lucide/svelte) -->
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 22v-6"/>
+            <path d="M12 8V2"/>
+            <path d="M4 12H2"/>
+            <path d="M10 12H8"/>
+            <path d="M16 12h-2"/>
+            <path d="M22 12h-2"/>
+            <path d="m15 19-3-3-3 3"/>
+            <path d="m15 5-3 3-3-3"/>
+          </svg>
         </button>
         <button type="button" class="tool-ico" title="重试" aria-label="重试" onclick="quickCmd('/retry')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
@@ -963,10 +1145,8 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.8 2.1c-.8.5-1.3 1-1.3 1.9"/><path d="M12 17h.01"/></svg>
         </button>
       </div>
-      <button type="button" class="ctx-chip" id="ctxChip" title="上下文详情" onclick="toggleCtxPanel(event)">
-        <span class="ctx-bar" id="ctxBar"><i id="ctxBarFill"></i></span>
-        <span id="ctxChipLabel">Context · —</span>
-      </button>
+    </div>
+    <div class="input-wrap" style="position:relative">
       <div class="ctx-panel" id="ctxPanel" role="dialog" aria-label="上下文详情">
         <h4><span>Context</span><span id="ctxPanelHead">—</span></h4>
         <div class="row"><span>已用</span><b id="ctxUsedPct">—</b></div>
@@ -978,14 +1158,21 @@
         <div class="row"><span>本轮 Prompt</span><b id="ctxTurnPrompt">—</b></div>
         <div class="row"><span>本轮 Generated</span><b id="ctxTurnGen">—</b></div>
         <div class="row"><span>平均速度</span><b id="ctxSpeed">—</b></div>
-        <div class="hint" id="ctxHint">基于本地估算；模型 n_ctx 来自 GGUF 状态。</div>
+        <div class="hint" id="ctxHint">基于本地估算；模型 n_ctx 来自 GGUF / llama-server。</div>
         <button type="button" class="ctx-compact" onclick="quickCmd('/compact'); closeCtxPanel();">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 22v-6"/>
+            <path d="M12 8V2"/>
+            <path d="M4 12H2"/>
+            <path d="M10 12H8"/>
+            <path d="M16 12h-2"/>
+            <path d="M22 12h-2"/>
+            <path d="m15 19-3-3-3 3"/>
+            <path d="m15 5-3 3-3-3"/>
+          </svg>
           Compact conversation
         </button>
       </div>
-    </div>
-    <div class="input-wrap">
       <div class="slash-hint" id="slashHint"></div>
       <div class="input-box">
         <textarea id="chatText" rows="1" placeholder="Type a message…"></textarea>
@@ -994,6 +1181,13 @@
             <button type="button" class="composer-icon-btn" id="composerPlusBtn" title="快捷命令" onclick="toggleSlashFromPlus()" aria-label="快捷命令"></button>
           </div>
           <div class="composer-right">
+            <button type="button" class="ctx-ring-btn" id="ctxChip" title="上下文" aria-label="上下文" onclick="toggleCtxPanel(event)">
+              <svg class="ctx-ring" id="ctxRing" viewBox="0 0 24 24" aria-hidden="true">
+                <circle class="track" cx="12" cy="12" r="9"></circle>
+                <circle class="prog" id="ctxRingProg" cx="12" cy="12" r="9"
+                  stroke-dasharray="0 56.55"></circle>
+              </svg>
+            </button>
             <button type="button" class="model-chip" id="modelChip" disabled onclick="toggleModelMenu(event)">
               <svg class="cube" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
                 <path d="M12 2.5 20 7v10l-8 4.5L4 17V7l8-4.5Z"/>
@@ -1076,15 +1270,13 @@ function applyTheme(mode, opts) {
   // 写会把用户已存主题覆盖为默认（kvPending 回放先于纠偏落盘）
   if (!opts || opts.persist !== false) kvSet('zing_theme', mode);
   const btn = document.getElementById('themeBtn');
-  if (btn) btn.textContent = THEME_ICON[mode] || '🖥';
+  if (btn) btn.textContent = '主题 · ' + (THEME_LABEL[mode] || '跟随系统');
 }
 function cycleTheme() {
   const cur = kvGet('zing_theme', 'system') || 'system';
   const next = THEMES[(THEMES.indexOf(cur) + 1) % THEMES.length];
   applyTheme(next);
 }
-// v17: 主题按钮初始化即绑定（此前在 sendChat 内绑——首次发消息前不响应）
-{ const tb = document.getElementById('themeBtn'); if (tb) tb.onclick = cycleTheme; }
 
 // 首帧即应用（防闪烁：script 在 body 尾但渲染前同步跑）
 applyTheme(kvGet('zing_theme', 'system') || 'system', { persist: false });  // v7.1: 首帧不写盘（kvMem 未预载防覆盖）
@@ -1877,6 +2069,7 @@ function refreshBackendSel() {
     const opts = sel.options;
     for (let i = 0; i < opts.length; i++) { if (opts[i].value === prev) { sel.selectedIndex = i; break; } }
   }
+  refreshActiveBackendLabel();
 }
 
 function onBackendChange() {
@@ -1891,6 +2084,7 @@ function onBackendChange() {
     refreshBackendSel();
     sel.value = url;
   }
+  refreshActiveBackendLabel();
   connectWs();
 }
 
@@ -1945,6 +2139,10 @@ function applyChannelStatus(st) {
   if (st.local_endpoint_ok === false) {
     meta.textContent += ' · 本地端点未就绪';
   }
+  const nCtx = Number(st.n_ctx || 0) || 0;
+  if (nCtx > 0) ctxStats.n_ctx = nCtx;
+  if (model) ctxStats.model = String(model);
+  renderCtxPanel();
 }
 function onChannelChange() {
   if (channelSwitching) return;
@@ -2004,21 +2202,31 @@ function closeCtxPanel() {
 }
 function renderCtxPanel() {
   const nCtx = ctxStats.n_ctx || 0;
-  const used = Math.min(nCtx || Infinity, (ctxStats.lastPrompt || 0) + (ctxStats.lastGen || 0) ||
-    (ctxStats.totalPrompt + ctxStats.totalGen));
+  const turnUsed = (ctxStats.lastPrompt || 0) + (ctxStats.lastGen || 0);
+  const sessUsed = (ctxStats.totalPrompt || 0) + (ctxStats.totalGen || 0);
+  const usedRaw = turnUsed > 0 ? turnUsed : sessUsed;
+  const used = nCtx > 0 ? Math.min(nCtx, usedRaw) : usedRaw;
   const pct = nCtx > 0 ? Math.min(100, Math.round((used / nCtx) * 100)) : 0;
   const remain = nCtx > 0 ? Math.max(0, nCtx - used) : 0;
-  const chip = $('ctxChipLabel');
-  const bar = $('ctxBar');
-  const fill = $('ctxBarFill');
-  if (chip) chip.textContent = nCtx > 0
-    ? ('Context · ' + fmtTok(used) + ' / ' + fmtTok(nCtx))
-    : ('Context · ' + fmtTok(used) + ' tok');
-  if (fill) fill.style.width = (nCtx > 0 ? pct : 0) + '%';
-  if (bar) {
-    bar.classList.remove('warn', 'hot');
-    if (pct >= 85) bar.classList.add('hot');
-    else if (pct >= 60) bar.classList.add('warn');
+  const ringBtn = $('ctxChip');
+  const prog = $('ctxRingProg');
+  // 细线圆环进度（模型芯片左侧）；点开看详情
+  const tip = nCtx > 0
+    ? (fmtTok(used) + ' / ' + fmtTok(nCtx) + (pct ? (' · ' + pct + '%') : ''))
+    : (fmtTok(used) + ' tok');
+  if (ringBtn) {
+    ringBtn.title = tip || '上下文';
+    ringBtn.classList.remove('warn', 'hot');
+    if (pct >= 85) ringBtn.classList.add('hot');
+    else if (pct >= 60) ringBtn.classList.add('warn');
+  }
+  if (prog) {
+    const C = 2 * Math.PI * 9; // r=9 → ~56.55
+    const p = Math.max(0, Math.min(100, pct));
+    // 0% = 完全空环（仅 track）；有占用才画进度弧
+    const len = C * p / 100;
+    prog.setAttribute('stroke-dasharray', len.toFixed(2) + ' ' + C.toFixed(2));
+    prog.style.opacity = p > 0 ? '1' : '0';
   }
   const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
   set('ctxPanelHead', nCtx > 0 ? (fmtTok(used) + ' / ' + fmtTok(nCtx)) : fmtTok(used));
@@ -2028,12 +2236,12 @@ function renderCtxPanel() {
   set('ctxAllGen', fmtTok(ctxStats.totalGen) + ' tok');
   set('ctxTurnPrompt', ctxStats.lastPrompt ? (fmtTok(ctxStats.lastPrompt) + ' tok') : '—');
   set('ctxTurnGen', ctxStats.lastGen ? (fmtTok(ctxStats.lastGen) + ' tok') : '—');
-  set('ctxSpeed', ctxStats.lastSpeed ? (Number(ctxStats.lastSpeed).toFixed(1) + ' t/s') : '—');
+  set('ctxSpeed', ctxStats.lastSpeed ? (Number(ctxStats.lastSpeed).toFixed(2) + ' t/s') : '—');
   const hint = $('ctxHint');
   if (hint) {
     hint.textContent = ctxStats.model
-      ? ('模型 ' + ctxStats.model + (nCtx ? (' · n_ctx=' + nCtx) : '') + ' · token 为估算')
-      : '基于本地估算；模型 n_ctx 来自 GGUF 状态。';
+      ? ('模型 ' + ctxStats.model + (nCtx ? (' · n_ctx=' + nCtx) : '') + ' · 占用为估算')
+      : (nCtx ? ('n_ctx=' + nCtx + ' · 占用为估算') : '等待模型 n_ctx（sidecar / GGUF）…');
   }
 }
 function refreshCtxFromSession() {
@@ -2250,8 +2458,14 @@ async function discover() {
 }
 
 function setConn(on, text) {
-  $('connDot').classList.toggle('on', on);
-  $('connText').textContent = text || (on ? '已连接' : '未连接');
+  const status = text || (on ? '已连接' : '未连接');
+  const dot = $('connDot');
+  if (dot) dot.classList.toggle('on', on);
+  const ct = $('connText');
+  if (ct) ct.textContent = status;
+  const sbs = $('settingsBackendStatus');
+  if (sbs) sbs.textContent = status;
+  refreshActiveBackendLabel();
   $('sendBtn').disabled = !on;
   const ch = $('channelSel');
   if (ch && !on) {
@@ -2269,6 +2483,51 @@ function setConn(on, text) {
     setModelChipLabel('未连接', true);
     closeModelMenu();
   }
+}
+
+function refreshActiveBackendLabel() {
+  const nameEl = $('activeBackendName');
+  if (!nameEl) return;
+  const sel = $('backendSel');
+  let label = '本机后端';
+  if (sel && sel.selectedIndex >= 0 && sel.options[sel.selectedIndex]) {
+    const opt = sel.options[sel.selectedIndex];
+    if (opt.value && opt.value !== '__manual__') label = opt.textContent || label;
+    else if (opt.value === '__manual__') label = '手动后端';
+  }
+  // 截断过长地址，侧栏只留可读名
+  if (label.length > 28) label = label.slice(0, 26) + '…';
+  nameEl.textContent = label;
+}
+
+function openSettings() {
+  closeUserMenu();
+  const ov = $('settingsPage');
+  if (!ov) return;
+  ov.classList.add('open');
+  ov.setAttribute('aria-hidden', 'false');
+  refreshActiveBackendLabel();
+}
+function closeSettings() {
+  const ov = $('settingsPage');
+  if (!ov) return;
+  ov.classList.remove('open');
+  ov.setAttribute('aria-hidden', 'true');
+}
+function toggleUserMenu(ev) {
+  if (ev) ev.stopPropagation();
+  const menu = $('userMenu');
+  const btn = $('userMenuBtn');
+  if (!menu || !btn) return;
+  const open = !menu.classList.contains('open');
+  menu.classList.toggle('open', open);
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+function closeUserMenu() {
+  const menu = $('userMenu');
+  const btn = $('userMenuBtn');
+  if (menu) menu.classList.remove('open');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
 }
 
 function showBanner(msg) { const b = $('banner'); b.textContent = msg; b.classList.add('show'); }
@@ -2627,11 +2886,42 @@ function applyHint() {
   document.addEventListener('click', (e) => {
     const panel = $('ctxPanel');
     const chip = $('ctxChip');
-    if (!panel || !panel.classList.contains('open')) return;
-    if (panel.contains(e.target) || (chip && chip.contains(e.target))) return;
-    closeCtxPanel();
+    if (panel && panel.classList.contains('open')) {
+      if (!(panel.contains(e.target) || (chip && chip.contains(e.target)))) closeCtxPanel();
+    }
+    const menu = $('userMenu');
+    const ubtn = $('userMenuBtn');
+    if (menu && menu.classList.contains('open')) {
+      if (!(menu.contains(e.target) || (ubtn && ubtn.contains(e.target)))) closeUserMenu();
+    }
   });
   renderCtxPanel();
+
+  const userBtn = $('userMenuBtn');
+  if (userBtn) userBtn.onclick = toggleUserMenu;
+  const userMenu = $('userMenu');
+  if (userMenu) {
+    userMenu.querySelectorAll('button[data-action]').forEach((b) => {
+      b.onclick = (ev) => {
+        ev.stopPropagation();
+        const act = b.getAttribute('data-action');
+        if (act === 'settings') openSettings();
+        else if (act === 'theme') { cycleTheme(); }
+        closeUserMenu();
+      };
+    });
+  }
+  const settingsClose = $('settingsCloseBtn');
+  if (settingsClose) settingsClose.onclick = closeSettings;
+  const settingsOv = $('settingsPage');
+  if (settingsOv) {
+    settingsOv.addEventListener('click', (e) => {
+      if (e.target === settingsOv) closeSettings();
+    });
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { closeSettings(); closeUserMenu(); }
+  });
 
   const ta = $('chatText');
   ta.addEventListener('input', () => {
@@ -2660,10 +2950,17 @@ function applyHint() {
       const hosts = loadHosts();
       const box = $('rbList');
       box.innerHTML = '';
+      const curUrl = currentBackendUrl();
+      const wsOn = !!(ws && ws.readyState === WebSocket.OPEN);
       hosts.forEach((h, i) => {
         const row = document.createElement('div');
         row.style.cssText = 'display:flex;align-items:center;gap:5px;padding:4px 0;';
+        const isActive = curUrl.indexOf(h.host + ':' + (h.agent_port || 8765)) >= 0;
+        const statusHint = isActive
+          ? (wsOn ? '<span style="font-size:10px;color:var(--ok);margin-right:4px;">已连接</span>' : '<span style="font-size:10px;color:var(--bad);margin-right:4px;">未连接</span>')
+          : '';
         row.innerHTML = '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--side-item);">' + esc(h.name) + '</span>' +
+          statusHint +
           '<span class="rb-dot" data-i="' + i + '" style="width:7px;height:7px;border-radius:50%;background:var(--sb-thumb);"></span>' +
           '<span class="rb-op" data-i="' + i + '" data-op="probe" title="探测" style="cursor:pointer;color:var(--side-ink-soft);">⟳</span>' +
           '<span class="rb-op" data-i="' + i + '" data-op="install" title="安装" style="cursor:pointer;color:var(--side-ink-soft);">⬇</span>' +
@@ -2722,7 +3019,12 @@ function applyHint() {
       try {
         const st = await window.svcStatus();
         const el = $('svcState');
-        el.textContent = st.healthy ? '● 运行中' : (st.running ? '● 启动中' : '● 已停止');
+        const cur = currentBackendUrl();
+        const isLocalTarget = /127\.0\.0\.1|localhost/.test(cur);
+        const wsOn = !!(ws && ws.readyState === WebSocket.OPEN);
+        let text = st.healthy ? '● 运行中' : (st.running ? '● 启动中' : '● 已停止');
+        if (isLocalTarget) text += wsOn ? ' · 已连接' : ' · 未连接';
+        el.textContent = text;
         el.style.color = 'var(' + (st.healthy ? '--ok' : (st.running ? '--warn-dot' : '--bad')) + ')';
       } catch (e) {}
     };

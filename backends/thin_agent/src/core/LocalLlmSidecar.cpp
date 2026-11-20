@@ -10,6 +10,8 @@
 
 #include "thin_agent/llm/CurlHttpClient.h"
 
+#include <nlohmann/json.hpp>
+
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -131,7 +133,7 @@ std::string LocalLlmSidecar::identity_of(const DemoConfigCompat& cfg) {
   oss << make_api_base(cfg) << "|"
       << (cfg.sidecar_model_path.empty() ? "models/gguf/aurum-brain-q4_k_m.gguf"
                                          : cfg.sidecar_model_path)
-      << "|" << cfg.model_name;
+      << "|" << cfg.model_name << "|n_ctx=" << cfg.sidecar_n_ctx;
   return oss.str();
 }
 
@@ -145,6 +147,58 @@ bool LocalLlmSidecar::probe(const std::string& api_base, int timeout_ms,
   if (!(resp.ok && resp.status_code >= 200 && resp.status_code < 300)) return false;
   if (expect_model.empty()) return true;
   return resp.body.find(expect_model) != std::string::npos;
+}
+
+int LocalLlmSidecar::fetch_n_ctx(const std::string& api_base, int timeout_ms) {
+  std::string base =
+      api_base.empty() ? "http://127.0.0.1:1234/v1" : trim_slash(api_base);
+  CurlHttpClient http(timeout_ms > 0 ? timeout_ms : 2500);
+
+  auto try_models = [&]() -> int {
+    auto resp = http.get(base + "/models", "");
+    if (!(resp.ok && resp.status_code >= 200 && resp.status_code < 300)) return 0;
+    try {
+      auto j = nlohmann::json::parse(resp.body);
+      auto dig = [](const nlohmann::json& node) -> int {
+        if (!node.is_object()) return 0;
+        if (node.contains("meta") && node["meta"].is_object()) {
+          const int v = node["meta"].value("n_ctx", 0);
+          if (v > 0) return v;
+        }
+        return node.value("n_ctx", 0);
+      };
+      if (j.contains("data") && j["data"].is_array() && !j["data"].empty()) {
+        const int v = dig(j["data"].front());
+        if (v > 0) return v;
+      }
+      if (j.contains("models") && j["models"].is_array() && !j["models"].empty()) {
+        const int v = dig(j["models"].front());
+        if (v > 0) return v;
+      }
+    } catch (...) {
+    }
+    return 0;
+  };
+
+  if (const int v = try_models(); v > 0) return v;
+
+  // /props 在 /v1 同级的上一层：http://host:port/props
+  std::string root = base;
+  if (root.size() >= 3 && root.compare(root.size() - 3, 3, "/v1") == 0)
+    root = root.substr(0, root.size() - 3);
+  auto resp = http.get(root + "/props", "");
+  if (!(resp.ok && resp.status_code >= 200 && resp.status_code < 300)) return 0;
+  try {
+    auto j = nlohmann::json::parse(resp.body);
+    if (j.contains("default_generation_settings") &&
+        j["default_generation_settings"].is_object()) {
+      const int v = j["default_generation_settings"].value("n_ctx", 0);
+      if (v > 0) return v;
+    }
+    return j.value("n_ctx", 0);
+  } catch (...) {
+  }
+  return 0;
 }
 
 std::string LocalLlmSidecar::api_base() const {
@@ -348,17 +402,29 @@ bool LocalLlmSidecar::ensure_running(const DemoConfigCompat& cfg, std::string* e
       std::lock_guard<std::mutex> lk(mu_);
       cur_id = identity_;
     }
-    if (cur_id.empty() || cur_id == want_id) {
+    const int live_ctx = fetch_n_ctx(base);
+    const bool ctx_ok =
+        cfg.sidecar_n_ctx <= 0 || live_ctx <= 0 || live_ctx == cfg.sidecar_n_ctx;
+    if (ctx_ok && (cur_id.empty() || cur_id == want_id)) {
       std::lock_guard<std::mutex> lk(mu_);
       identity_ = want_id;
-      std::cerr << "[LocalLlmSidecar] reuse healthy endpoint " << base << std::endl;
+      std::cerr << "[LocalLlmSidecar] reuse healthy endpoint " << base
+                << (live_ctx > 0 ? (" n_ctx=" + std::to_string(live_ctx)) : "")
+                << std::endl;
       return true;
     }
-    // 同端口但身份变了：若是我们拥有的进程则重建；外部进程则报错避免误用
+    // 同端口但身份 / n_ctx 变了：我们拥有则重建；外部则报错
     if (!owned_.load()) {
-      if (err)
-        *err = "endpoint healthy but model identity mismatch (external process on " +
-               base + ")";
+      if (err) {
+        if (!ctx_ok) {
+          *err = "endpoint n_ctx=" + std::to_string(live_ctx) +
+                 " but profile wants " + std::to_string(cfg.sidecar_n_ctx) +
+                 " (stop the process on " + base + " and retry)";
+        } else {
+          *err = "endpoint healthy but model identity mismatch (external process on " +
+                 base + ")";
+        }
+      }
       return false;
     }
   }

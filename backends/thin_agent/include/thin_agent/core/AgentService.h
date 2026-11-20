@@ -575,6 +575,7 @@ public:
   std::mutex sidecar_mu_;                                      ///< 保护 llm_sidecar_ 启停（boot/chat 并发）
   std::atomic<uint64_t> sidecar_boot_gen_{0};                  ///< 切换/析构时作废后台 boot
   std::thread sidecar_boot_thread_;                            ///< 后台拉起 sidecar，避免阻塞 /health
+  mutable std::atomic<int> cached_n_ctx_{0};                   ///< 上下文窗口（sidecar/GGUF/推断缓存）
   SkillRegistry skill_registry_;                               ///< Skill/Action 注册表
   std::atomic<int> sub_agent_counter_{0};                      ///< 子 Agent 计数
   std::atomic<int> next_id_counter_{0};                        ///< v0.11.6: 通用ID计数

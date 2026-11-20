@@ -36,6 +36,10 @@ class LocalLlmSidecar {
   static bool probe(const std::string& api_base, int timeout_ms = 2000,
                     const std::string& expect_model = {});
 
+  /// 从本地 OpenAI 兼容端点读取上下文窗口（/v1/models meta.n_ctx，回退 /props）。
+  /// @return >0 为有效 n_ctx；失败返回 0。
+  static int fetch_n_ctx(const std::string& api_base, int timeout_ms = 2500);
+
   /// 由 DemoConfigCompat 拼出实际 api_base（api_base 优先，否则 sidecar_host/port）。
   static std::string make_api_base(const DemoConfigCompat& cfg);
 

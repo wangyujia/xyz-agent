@@ -245,7 +245,7 @@ profiles:
     sidecar_model_path: "models/gguf/aurum-brain-q4_k_m.gguf"
     sidecar_host: "127.0.0.1"
     sidecar_port: 1234
-    sidecar_n_ctx: 0
+    sidecar_n_ctx: 32768   # Aurum n_ctx_train=32K；0 时 llama-server 常默认 16K
     sidecar_n_gpu_layers: -1
     sidecar_ready_timeout_ms: 180000
 
