@@ -62,6 +62,8 @@ std::string default_server_path() {
   }
 #ifdef _WIN32
   const char* cand[] = {
+      R"(E:\deps-thin-agent\llama.cpp\bin\llama-server.exe)",
+      R"(E:/deps-thin-agent/llama.cpp/bin/llama-server.exe)",
       R"(C:\deps-thin-agent\llama.cpp\bin\llama-server.exe)",
       R"(C:/deps-thin-agent/llama.cpp/bin/llama-server.exe)",
       "llama-server.exe",

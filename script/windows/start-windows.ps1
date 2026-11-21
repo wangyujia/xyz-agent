@@ -175,7 +175,7 @@ switch ($AgentProfile) {
 if ($AgentProfile -eq "local_tools_mode") {
   $server = Get-YamlScalar $Config "local_tools_mode" "sidecar_server_path"
   $model = Get-YamlScalar $Config "local_tools_mode" "sidecar_model_path"
-  if (-not $server) { $server = "C:/deps-thin-agent/llama.cpp/bin/llama-server.exe" }
+  if (-not $server) { $server = "E:/deps-thin-agent/llama.cpp/bin/llama-server.exe" }
   if (-not $model) { $model = "models/gguf/aurum-brain-q4_k_m.gguf" }
   $modelAbs = $model
   if (-not [IO.Path]::IsPathRooted($modelAbs)) {

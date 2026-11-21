@@ -16,6 +16,7 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path))
 $DefaultModel = Join-Path $Root "backends\thin_agent\models\gguf\aurum-brain-q4_k_m.gguf"
 $DefaultBinCandidates = @(
+  "E:\deps-thin-agent\llama.cpp\bin\llama-server.exe",
   "C:\deps-thin-agent\llama.cpp\bin\llama-server.exe",
   (Join-Path $Root "deps\llama.cpp\bin\llama-server.exe"),
   (Join-Path $env:LOCALAPPDATA "llama.cpp\bin\llama-server.exe")
@@ -53,7 +54,7 @@ if ($Stop) {
 
 if (-not $LlamaServer -or -not (Test-Path $LlamaServer)) {
   Write-Host "找不到 llama-server.exe。"
-  Write-Host "请用 -LlamaServer 指定，或安装到 C:\deps-thin-agent\llama.cpp\bin\"
+  Write-Host "请用 -LlamaServer 指定，或安装到 E:\deps-thin-agent\llama.cpp\bin\"
   exit 1
 }
 if (-not (Test-Path $Model)) {

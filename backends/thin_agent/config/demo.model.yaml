@@ -223,7 +223,7 @@ profiles:
 
   # 托管 llama-server sidecar：thin_agent 自动拉起/健康检查/退出时回收。
   # 直连读文件仍走 Agent 内建；需要模型自主 tools 时切此 profile。
-  # 依赖：C:/deps-thin-agent/llama.cpp/bin/llama-server.exe + Aurum GGUF
+  # 依赖：E:/deps-thin-agent/llama.cpp/bin/llama-server.exe + Aurum GGUF
   # 启动：thin_agent --profile local_tools_mode
   local_tools_mode:
     mode: cloud
@@ -241,7 +241,7 @@ profiles:
     pipeline_enable_rollback_hook: false
     external_provider: mock
     sidecar_enabled: true
-    sidecar_server_path: "C:/deps-thin-agent/llama.cpp/bin/llama-server.exe"
+    sidecar_server_path: "E:/deps-thin-agent/llama.cpp/bin/llama-server.exe"
     sidecar_model_path: "models/gguf/aurum-brain-q4_k_m.gguf"
     sidecar_host: "127.0.0.1"
     sidecar_port: 1234
