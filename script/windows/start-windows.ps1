@@ -171,11 +171,27 @@ switch ($AgentProfile) {
   "openai_compatible_demo" { $AgentProfile = "cloud_api_mode" }
 }
 
+function Get-DefaultLlamaServerPath {
+  $suffix = "deps-thin-agent\llama.cpp\bin\llama-server.exe"
+  $drives = @(
+    [System.IO.DriveInfo]::GetDrives() |
+      Where-Object { $_.DriveType -eq [System.IO.DriveType]::Fixed -and $_.IsReady } |
+      ForEach-Object { $_.Name.Substring(0, 2) } |
+      Sort-Object
+  )
+  for ($i = $drives.Count - 1; $i -ge 0; $i--) {
+    $p = Join-Path ($drives[$i] + "\") $suffix
+    if (Test-Path $p) { return $p }
+  }
+  if ($drives.Count -gt 0) { return (Join-Path ($drives[-1] + "\") $suffix) }
+  return "C:\deps-thin-agent\llama.cpp\bin\llama-server.exe"
+}
+
 # local_tools_mode 依赖 sidecar：缺二进制/模型时预先回退，避免“健康但对话挂”。
 if ($AgentProfile -eq "local_tools_mode") {
   $server = Get-YamlScalar $Config "local_tools_mode" "sidecar_server_path"
   $model = Get-YamlScalar $Config "local_tools_mode" "sidecar_model_path"
-  if (-not $server) { $server = "E:/deps-thin-agent/llama.cpp/bin/llama-server.exe" }
+  if (-not $server) { $server = Get-DefaultLlamaServerPath }
   if (-not $model) { $model = "models/gguf/aurum-brain-q4_k_m.gguf" }
   $modelAbs = $model
   if (-not [IO.Path]::IsPathRooted($modelAbs)) {

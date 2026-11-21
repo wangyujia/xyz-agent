@@ -129,7 +129,7 @@ $cmake = "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\Comm
 
 ## 外挂 llama-server（方式 B）
 
-默认模型路径同上 `aurum-brain-q4_k_m.gguf`。二进制优先找 `E:\deps-thin-agent\llama.cpp\bin\llama-server.exe`。
+默认模型路径同上 `aurum-brain-q4_k_m.gguf`。未指定 `sidecar_server_path` 时，用最后一个可写固定盘上的 `deps-thin-agent\llama.cpp\bin\llama-server.exe`；该盘没有再往前的盘找。
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File script\windows\start-llama-server.ps1
@@ -140,7 +140,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File script\windows\start-llama-s
 手动等价：
 
 ```powershell
-& E:\deps-thin-agent\llama.cpp\bin\llama-server.exe `
+& <最后一个可写盘>:\deps-thin-agent\llama.cpp\bin\llama-server.exe `
   -m backends\thin_agent\models\gguf\aurum-brain-q4_k_m.gguf `
   --host 127.0.0.1 --port 1234 -c 4096 -ngl 99
 ```

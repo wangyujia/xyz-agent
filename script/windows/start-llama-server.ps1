@@ -15,12 +15,30 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path))
 $DefaultModel = Join-Path $Root "backends\thin_agent\models\gguf\aurum-brain-q4_k_m.gguf"
-$DefaultBinCandidates = @(
-  "E:\deps-thin-agent\llama.cpp\bin\llama-server.exe",
-  "C:\deps-thin-agent\llama.cpp\bin\llama-server.exe",
-  (Join-Path $Root "deps\llama.cpp\bin\llama-server.exe"),
-  (Join-Path $env:LOCALAPPDATA "llama.cpp\bin\llama-server.exe")
-)
+
+function Get-WritableFixedDrives {
+  # 盘符从小到大。固定盘且已就绪；只读卷排除。
+  @(
+    [System.IO.DriveInfo]::GetDrives() |
+      Where-Object { $_.DriveType -eq [System.IO.DriveType]::Fixed -and $_.IsReady } |
+      ForEach-Object { $_.Name.Substring(0, 2) } |
+      Sort-Object
+  )
+}
+
+function Get-DefaultLlamaServerCandidates {
+  $suffix = "deps-thin-agent\llama.cpp\bin\llama-server.exe"
+  $drives = @(Get-WritableFixedDrives)
+  $cands = @()
+  for ($i = $drives.Count - 1; $i -ge 0; $i--) {
+    $cands += (Join-Path ($drives[$i] + "\") $suffix)
+  }
+  $cands += (Join-Path $Root "deps\llama.cpp\bin\llama-server.exe")
+  $cands += (Join-Path $env:LOCALAPPDATA "llama.cpp\bin\llama-server.exe")
+  return @($cands)
+}
+
+$DefaultBinCandidates = @(Get-DefaultLlamaServerCandidates)
 
 if (-not $Model) { $Model = $DefaultModel }
 if (-not $LlamaServer) {
@@ -54,7 +72,8 @@ if ($Stop) {
 
 if (-not $LlamaServer -or -not (Test-Path $LlamaServer)) {
   Write-Host "找不到 llama-server.exe。"
-  Write-Host "请用 -LlamaServer 指定，或安装到 E:\deps-thin-agent\llama.cpp\bin\"
+  $hint = $DefaultBinCandidates | Select-Object -First 1
+  Write-Host "请用 -LlamaServer 指定，或安装到最后一个可写盘：$hint"
   exit 1
 }
 if (-not (Test-Path $Model)) {

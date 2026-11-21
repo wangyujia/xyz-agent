@@ -56,30 +56,58 @@ std::string resolve_existing(const std::string& path) {
   return path;
 }
 
+// 最后一个可写固定盘上的约定安装位置。盘符不写死。
+std::string llama_server_on_drive(const std::string& drive) {
+  return drive + "\\deps-thin-agent\\llama.cpp\\bin\\llama-server.exe";
+}
+
+std::vector<std::string> writable_fixed_drives() {
+  std::vector<std::string> drives;
+#ifdef _WIN32
+  const DWORD mask = GetLogicalDrives();
+  for (int i = 0; i < 26; ++i) {
+    if ((mask & (1u << i)) == 0) continue;
+    const std::string root = std::string(1, static_cast<char>('A' + i)) + ":\\";
+    if (GetDriveTypeA(root.c_str()) != DRIVE_FIXED) continue;
+    DWORD flags = 0;
+    if (!GetVolumeInformationA(root.c_str(), nullptr, 0, nullptr, nullptr, &flags,
+                               nullptr, 0)) {
+      continue;
+    }
+    if (flags & FILE_READ_ONLY_VOLUME) continue;
+    drives.push_back(std::string(1, static_cast<char>('A' + i)) + ":");
+  }
+#endif
+  return drives;
+}
+
 std::string default_server_path() {
   if (const char* env = std::getenv("THIN_AGENT_LLAMA_SERVER")) {
     if (env && *env) return env;
   }
+  namespace fs = std::filesystem;
 #ifdef _WIN32
-  const char* cand[] = {
-      R"(E:\deps-thin-agent\llama.cpp\bin\llama-server.exe)",
-      R"(E:/deps-thin-agent/llama.cpp/bin/llama-server.exe)",
-      R"(C:\deps-thin-agent\llama.cpp\bin\llama-server.exe)",
-      R"(C:/deps-thin-agent/llama.cpp/bin/llama-server.exe)",
-      "llama-server.exe",
-  };
+  const std::vector<std::string> drives = writable_fixed_drives();
+  for (auto it = drives.rbegin(); it != drives.rend(); ++it) {
+    const std::string path = llama_server_on_drive(*it);
+    std::error_code ec;
+    if (fs::exists(path, ec)) return path;
+  }
+  std::error_code ec;
+  if (fs::exists("llama-server.exe", ec)) return "llama-server.exe";
+  if (!drives.empty()) return llama_server_on_drive(drives.back());
+  return "llama-server.exe";
 #else
   const char* cand[] = {
       "/opt/llama.cpp/bin/llama-server",
       "llama-server",
   };
-#endif
-  namespace fs = std::filesystem;
   for (const char* p : cand) {
     std::error_code ec;
     if (fs::exists(p, ec)) return p;
   }
   return cand[0];
+#endif
 }
 
 bool parse_host_port_from_api_base(const std::string& api_base, std::string* host,
