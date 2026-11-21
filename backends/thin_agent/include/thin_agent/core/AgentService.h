@@ -245,6 +245,9 @@ class AgentService {
     // ── 回调 ──
     StreamCallback on_chunk;
     EventCallback on_event;
+
+    /// 本轮开始时拷下的配置。热切换只替换成员 cfg_，进行中的对话读这份快照。
+    DemoConfigCompat cfg;
   };
 
   /// v0.50.0: 统一本地意图回复组装（原 handle_chat 内 local_reply lambda）。
@@ -458,6 +461,13 @@ class AgentService {
   /// 语义零变化——各段原本就是构造函数体内按注释块分界的顺序步骤）。
   /// 按 cfg.sidecar_* 确保/回收托管 llama-server；返回 warning 文案（可空）。
   std::string ensure_llm_sidecar(const DemoConfigCompat& cfg);
+
+  /// 本轮可用的上下文窗口：显式配置、已探测缓存、sidecar/GGUF，最后才按模型名推断。
+  /// 历史裁剪和函数调用预算从这里取数。圆环只显示显式配置或已探测的值。
+  int resolved_context_window(const DemoConfigCompat& cfg) const;
+
+  /// 历史裁剪预算：策略上限，且不超过 resolved_context_window。
+  int history_token_budget(const DemoConfigCompat& cfg) const;
 
   void init_local_models();       ///< 本地 ModelPool 注册（Template/Qwen/Gemma + 异步预加载）
   void init_memory_rag();         ///< RAG 记忆（embedding 选择 + MemoryManager + summarizer）

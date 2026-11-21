@@ -196,6 +196,34 @@ bool probe_local_openai_endpoint(const std::string& api_base) {
 
 }  // namespace
 
+int AgentService::resolved_context_window(const DemoConfigCompat& cfg) const {
+  if (cfg.context_window_tokens > 0) return cfg.context_window_tokens;
+  const int cached = cached_n_ctx_.load();
+  if (cached > 0) return cached;
+  if (cfg.sidecar_enabled && cfg.sidecar_n_ctx > 0) return cfg.sidecar_n_ctx;
+  if (cfg.mode == "offline") {
+    const std::string local_model =
+        thin_agent::local::ModelPool::instance().preferred_chat();
+    for (const auto& st : thin_agent::local::ModelPool::instance().status_all()) {
+      if (st.value("backend", "") != "gguf") continue;
+      if (st.value("name", "") != local_model) continue;
+      int n = st.value("n_ctx", 0);
+      if (n <= 0) n = st.value("n_ctx_train", 0);
+      if (n > 0) return n;
+      break;
+    }
+  }
+  if (!cfg.model_name.empty()) return infer_context_window(cfg.model_name);
+  return 0;
+}
+
+int AgentService::history_token_budget(const DemoConfigCompat& cfg) const {
+  int budget = ctx_cfg_.history_budget_tokens > 0 ? ctx_cfg_.history_budget_tokens : 12000;
+  const int window = resolved_context_window(cfg);
+  if (window > 0) budget = std::min(budget, window);
+  return std::max(budget, 256);
+}
+
 std::string AgentService::ensure_llm_sidecar(const DemoConfigCompat& cfg) {
   LocalLlmSidecar* sc = nullptr;
   {
@@ -1430,18 +1458,7 @@ nlohmann::json AgentService::status_payload() const {
     channel = active_channel_;
   }
   std::string local_model = thin_agent::local::ModelPool::instance().preferred_chat();
-  int n_ctx = cached_n_ctx_.load();
-  if (n_ctx <= 0 && snap.mode == "offline") {
-    for (const auto& st : thin_agent::local::ModelPool::instance().status_all()) {
-      if (st.value("backend", "") != "gguf") continue;
-      if (st.value("name", "") == local_model) {
-        n_ctx = st.value("n_ctx", 0);
-        if (n_ctx <= 0) n_ctx = st.value("n_ctx_train", 0);
-        break;
-      }
-    }
-  }
-  if (n_ctx <= 0 && normalize_provider(snap.provider) == "lmstudio") {
+  if (cached_n_ctx_.load() <= 0 && normalize_provider(snap.provider) == "lmstudio") {
     const std::string base = snap.sidecar_enabled
                                  ? LocalLlmSidecar::make_api_base(snap)
                                  : snap.api_base;
@@ -1450,15 +1467,16 @@ nlohmann::json AgentService::status_payload() const {
       std::lock_guard<std::mutex> lk(n_ctx_mu_);
       epoch = n_ctx_epoch_;
     }
-    n_ctx = LocalLlmSidecar::fetch_n_ctx(base);
-    if (n_ctx > 0) {
+    const int fetched = LocalLlmSidecar::fetch_n_ctx(base);
+    if (fetched > 0) {
       std::lock_guard<std::mutex> lk(n_ctx_mu_);
-      if (epoch == n_ctx_epoch_) cached_n_ctx_.store(n_ctx);
-      else n_ctx = cached_n_ctx_.load();
+      if (epoch == n_ctx_epoch_) cached_n_ctx_.store(fetched);
     }
   }
-  if (n_ctx <= 0 && !snap.model_name.empty())
-    n_ctx = infer_context_window(snap.model_name);
+  // 圆环只显示显式配置或已探测的值。探测失败时缓存是 0，
+  // 不能回落到 sidecar_n_ctx，否则失败后又把上一轮清掉的窗口画回去。
+  int n_ctx = snap.context_window_tokens;
+  if (n_ctx <= 0) n_ctx = cached_n_ctx_.load();
 
   nlohmann::json out = {
       {"mode", snap.mode},

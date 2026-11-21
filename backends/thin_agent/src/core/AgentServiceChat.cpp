@@ -174,7 +174,7 @@ void AgentService::chat_translate_input(ChatContext& ctx) {
     }
   }
   if (!local_ok) {
-    DemoConfigCompat tr_cfg = cfg_;
+    DemoConfigCompat tr_cfg = ctx.cfg;
     tr_cfg.model_name = translate_input_config().cloud_model;
     tr_cfg.request_timeout_ms = translate_input_config().cloud_timeout_ms;
     CurlHttpClient http(tr_cfg.request_timeout_ms);  // v0.52.3: 超时对齐配置
@@ -218,7 +218,7 @@ nlohmann::json AgentService::make_local_reply(ChatContext& ctx,
       {"markers", probe_markers},
   };
   observation["cloud_complex_intent_gate"] = {
-      {"enabled", cfg_.complex_intent_force_cloud},
+      {"enabled", ctx.cfg.complex_intent_force_cloud},
       {"detected", complex_intent_detected},
       {"forced", force_cloud_for_complex},
   };
@@ -280,7 +280,7 @@ nlohmann::json AgentService::make_local_reply(ChatContext& ctx,
   observation["query_lang"] = query_lang;
   observation["template_lang"] = tpl_lang;
   const std::string translated_reply =
-      apply_reply_translation_if_needed(cfg_, reply_text, query_lang, tpl_lang, text);
+      apply_reply_translation_if_needed(ctx.cfg, reply_text, query_lang, tpl_lang, text);
   if (translated_reply != reply_text) {
     reply_text = translated_reply;
     observation["reply_translation_applied"] = true;
@@ -400,7 +400,7 @@ nlohmann::json AgentService::chat_classify_intent(ChatContext& ctx) {
     }
   }
   ctx.complex_intent_detected = !ctx.probe_markers.empty();
-  ctx.force_cloud_for_complex = (cfg_.mode == "cloud" && cfg_.complex_intent_force_cloud && ctx.complex_intent_detected);
+  ctx.force_cloud_for_complex = (ctx.cfg.mode == "cloud" && ctx.cfg.complex_intent_force_cloud && ctx.complex_intent_detected);
 
 
   return nullptr;
@@ -529,9 +529,9 @@ nlohmann::json AgentService::chat_route_local_intents(ChatContext& ctx) {
                                                           : local_spec.summary_template_key);
         const std::string status_text = render_template(
             policy_text_for_lang(base_key, ctx.query_lang, policy_text("status.summary", "")),
-            {{"mode", cfg_.mode},
-             {"model", cfg_.model_name},
-             {"provider", normalize_provider(cfg_.provider)}});
+            {{"mode", ctx.cfg.mode},
+             {"model", ctx.cfg.model_name},
+             {"provider", normalize_provider(ctx.cfg.provider)}});
         return make_local_reply(ctx, 
             local_spec.route_execute.empty() ? "local_status" : local_spec.route_execute,
             local_spec.reason_execute.empty() ? "status_intent" : local_spec.reason_execute,
@@ -548,9 +548,9 @@ nlohmann::json AgentService::chat_route_local_intents(ChatContext& ctx) {
             policy_text(local_spec.summary_template_key.empty() ? "status.onnx_explainer"
                                                               : local_spec.summary_template_key,
                         ""),
-            {{"mode", cfg_.mode},
-             {"model", cfg_.model_name},
-             {"provider", normalize_provider(cfg_.provider)}});
+            {{"mode", ctx.cfg.mode},
+             {"model", ctx.cfg.model_name},
+             {"provider", normalize_provider(ctx.cfg.provider)}});
         return make_local_reply(ctx, 
             local_spec.route_execute.empty() ? "local_status" : local_spec.route_execute,
             local_spec.reason_execute.empty() ? "onnx_knowledge_local" : local_spec.reason_execute,
@@ -865,7 +865,7 @@ nlohmann::json AgentService::chat_route_external_intents(ChatContext& ctx) {
                   {{"primary_len", primary.size()}, {"head", primary.substr(0, 40)}});
       } else {
       ExternalHandlerContext hctx{
-          cfg_,
+          ctx.cfg,
           ext_spec,
           ctx.text,
           ctx.query_lang,
@@ -875,7 +875,7 @@ nlohmann::json AgentService::chat_route_external_intents(ChatContext& ctx) {
           [&](const std::vector<std::string>& texts,
               const std::string& target_lang,
               const std::string& sample) {
-            return translate_texts(cfg_, texts, target_lang, sample);
+            return translate_texts(ctx.cfg, texts, target_lang, sample);
           },
           http_client_.get()};
       const auto rendered = run_external_intent_handler(hctx);
@@ -929,7 +929,7 @@ nlohmann::json AgentService::chat_route_external_intents(ChatContext& ctx) {
   }
 
   // 配置驱动的 external_clarify（general 泛检索澄清）
-  if (!ctx.force_cloud_for_complex && !should_route_open_queries_to_cloud(cfg_.mode)) {
+  if (!ctx.force_cloud_for_complex && !should_route_open_queries_to_cloud(ctx.cfg.mode)) {
     for (const auto& clarify_name : intent_names_by_kind("external_clarify")) {
       IntentSpec ext_clarify;
       if (!load_intent_spec(clarify_name, &ext_clarify) || ext_clarify.kind != "external_clarify") {
@@ -1444,15 +1444,15 @@ void AgentService::enrich_shared_system_prompt(ChatContext& ctx,
     }
     system_prompt += "\n\n=== YOUR RUNTIME ENVIRONMENT (authoritative) ===";
     system_prompt += "\n- Working directory: " + cwd;
-    system_prompt += "\n- Running mode: " + cfg_.mode;
+    system_prompt += "\n- Running mode: " + ctx.cfg.mode;
     if (offline) {
       system_prompt += "\n- Provider: local-gguf";
-      if (!cfg_.model_name.empty())
-        system_prompt += ", Model: " + cfg_.model_name;
+      if (!ctx.cfg.model_name.empty())
+        system_prompt += ", Model: " + ctx.cfg.model_name;
     } else {
       system_prompt +=
-          "\n- Provider: " + normalize_provider(cfg_.provider) +
-          ", Model: " + cfg_.model_name;
+          "\n- Provider: " + normalize_provider(ctx.cfg.provider) +
+          ", Model: " + ctx.cfg.model_name;
     }
     system_prompt += "\n=== END RUNTIME INFO ===";
   }
@@ -1939,7 +1939,7 @@ AgentService::ChatCloudResult AgentService::chat_run_cloud(ChatContext& ctx,
                       {"preview", utf8_truncate(file_hit.content, 240)}});
       }
       const bool zh = ctx.use_zh_progress || ctx.query_lang == "zh";
-      DemoConfigCompat sum_cfg = cfg_;
+      DemoConfigCompat sum_cfg = ctx.cfg;
       const auto fast_cfg_ex = fast_path_config();
       if (!fast_cfg_ex.model.empty()) sum_cfg.model_name = fast_cfg_ex.model;
       std::string user_ask =
@@ -1971,8 +1971,8 @@ AgentService::ChatCloudResult AgentService::chat_run_cloud(ChatContext& ctx,
             {"intent_backend", "direct-read_file"},
             {"provider", provider},
             {"model", sum_cfg.model_name},
-            {"api_base", cfg_.api_base},
-            {"api_key_env", cfg_.api_key_env},
+            {"api_base", ctx.cfg.api_base},
+            {"api_key_env", ctx.cfg.api_key_env},
             {"api_key_state", key_state},
             {"cloud_http_status", summary.http_status},
             {"decision",
@@ -2014,7 +2014,7 @@ AgentService::ChatCloudResult AgentService::chat_run_cloud(ChatContext& ctx,
     if (is_simple_file_op_pre && use_native_fc) {
       chat_push_thinking(ctx, 2, "fast");
 
-      DemoConfigCompat fast_cfg = cfg_;
+      DemoConfigCompat fast_cfg = ctx.cfg;
       fast_cfg.model_name = fast_cfg_ex.model;
       fast_cfg.request_timeout_ms = fast_cfg_ex.timeout_ms;
 
@@ -2055,7 +2055,7 @@ AgentService::ChatCloudResult AgentService::chat_run_cloud(ChatContext& ctx,
         log_event("timing", LogLevel::Debug, "detect_lang done",
                   {{"lang", reply_lang}, {"len", reply_text.size()}});
         const std::string translated =
-            apply_reply_translation_if_needed(cfg_, reply_text, ctx.query_lang, reply_lang, ctx.text);
+            apply_reply_translation_if_needed(ctx.cfg, reply_text, ctx.query_lang, reply_lang, ctx.text);
         log_event("timing", LogLevel::Debug, "translate check done",
                   {{"translated_len", translated.size()},
                    {"same", translated == reply_text}});
@@ -2067,8 +2067,8 @@ AgentService::ChatCloudResult AgentService::chat_run_cloud(ChatContext& ctx,
             {"intent_backend", "cloud-fast-function-calling"},
             {"provider", provider},
             {"model", fast_cfg_ex.model},
-            {"api_base", cfg_.api_base},
-            {"api_key_env", cfg_.api_key_env},
+            {"api_base", ctx.cfg.api_base},
+            {"api_key_env", ctx.cfg.api_key_env},
             {"api_key_state", key_state},
             {"cloud_http_status", fast_cloud.http_status},
             {"memory_size", ctx.snapshot.size()},
@@ -2127,8 +2127,8 @@ AgentService::ChatCloudResult AgentService::chat_run_cloud(ChatContext& ctx,
               {"intent_backend", "cloud-fast-function-calling"},
               {"provider", provider},
               {"model", fast_cfg_ex.model},
-              {"api_base", cfg_.api_base},
-              {"api_key_env", cfg_.api_key_env},
+              {"api_base", ctx.cfg.api_base},
+              {"api_key_env", ctx.cfg.api_key_env},
               {"api_key_state", key_state},
               {"cloud_http_status", summary.http_status},
               {"memory_size", ctx.snapshot.size()},
@@ -2195,7 +2195,7 @@ AgentService::ChatCloudResult AgentService::chat_run_cloud(ChatContext& ctx,
   // （ctx.snapshot > 1 表示有历史消息 = 多轮上下文，结果会随历史变化）。
   std::string cache_key;
   if (ctx.snapshot.size() <= 1) {
-    cache_key = make_cache_key(cfg_.model_name, ctx.text);
+    cache_key = make_cache_key(ctx.cfg.model_name, ctx.text);
     std::string cached = response_cache_->get(cache_key);
     if (!cached.empty()) {
       cloud.ok = true;
@@ -2276,7 +2276,7 @@ AgentService::ChatCloudResult AgentService::chat_run_cloud(ChatContext& ctx,
       if (it != fc_active_runs_.end() && fc_run_store_)
         fc_run_store_->append_messages(it->second, iter, msgs);
     };
-    cloud = run_function_calling_loop(cfg_, api_key, messages, tools_schema,
+    cloud = run_function_calling_loop(ctx.cfg, api_key, messages, tools_schema,
                                       ctx.session_id, ctx.idem_token, ctx.on_event, skill_registry_,
                                       3, adaptive_iterations, ctx.use_zh_progress, tool_cache_cb,
                                       [this, &ctx]() {  // v0.47.3: 流式中断
@@ -2286,9 +2286,9 @@ AgentService::ChatCloudResult AgentService::chat_run_cloud(ChatContext& ctx,
                                       fc_journal_cb,  // v0.52.26: journal
                                       ctx.on_chunk);  // v0.53.30: main FC 流式回放
   } else {
-    CurlHttpClient http(cfg_.request_timeout_ms);  // v0.52.3: 超时对齐配置
+    CurlHttpClient http(ctx.cfg.request_timeout_ms);  // v0.52.3: 超时对齐配置
     cloud = CloudLlmClient::chat_completion_with_fallback(
-        http, cfg_, messages, "THIN_AGENT_TEST_CLOUD_RESPONSE", {{"type", "json_object"}});
+        http, ctx.cfg, messages, "THIN_AGENT_TEST_CLOUD_RESPONSE", {{"type", "json_object"}});
   }
 
 cloud_done:
@@ -2370,7 +2370,7 @@ cloud_done:
     std::string reply_text = cloud.text;
     const std::string reply_lang = detect_query_language(reply_text);
     const std::string translated =
-        apply_reply_translation_if_needed(cfg_, reply_text, ctx.query_lang, reply_lang, ctx.text);
+        apply_reply_translation_if_needed(ctx.cfg, reply_text, ctx.query_lang, reply_lang, ctx.text);
     if (translated != reply_text) reply_text = translated;
 
     // v0.38.1: Skill 自进化 — 成功完成复杂任务后自动提取技能
@@ -2414,9 +2414,9 @@ cloud_done:
         {"mode_used", "cloud-fc"},
         {"intent_backend", "cloud-function-calling"},
         {"provider", provider},
-        {"model", cfg_.model_name},
-        {"api_base", cfg_.api_base},
-        {"api_key_env", cfg_.api_key_env},
+        {"model", ctx.cfg.model_name},
+        {"api_base", ctx.cfg.api_base},
+        {"api_key_env", ctx.cfg.api_key_env},
         {"api_key_state", key_state},
         {"cloud_http_status", cloud.http_status},
         {"memory_size", ctx.snapshot.size()},
@@ -2450,7 +2450,7 @@ nlohmann::json AgentService::chat_offline_fallback(ChatContext& ctx,
                                                    const CloudChatResult& cloud,
                                                    const std::string& key_state,
                                                    const std::string& provider) {
-  if (cfg_.fallback == "offline") {
+  if (ctx.cfg.fallback == "offline") {
     // 云调用失败 → 尝试本地模型级联，不再只回显模板
     std::string fallback_text;
     std::string fallback_model;
@@ -2472,9 +2472,9 @@ nlohmann::json AgentService::chat_offline_fallback(ChatContext& ctx,
         {"mode_used", local_result.ok ? "local-agent" : "offline-fallback"},
         {"intent_backend", "cloud"},
         {"provider", provider},
-        {"model", local_result.ok ? fallback_model : cfg_.model_name},
-        {"api_base", cfg_.api_base},
-        {"api_key_env", cfg_.api_key_env},
+        {"model", local_result.ok ? fallback_model : ctx.cfg.model_name},
+        {"api_base", ctx.cfg.api_base},
+        {"api_key_env", ctx.cfg.api_key_env},
         {"api_key_state", key_state},
         {"fallback_reason", "cloud_call_failed"},
         {"cloud_http_status", cloud.http_status},
@@ -2483,7 +2483,7 @@ nlohmann::json AgentService::chat_offline_fallback(ChatContext& ctx,
         {"decision", {{"route", local_result.ok ? fallback_model : "cloud_fallback"},
                       {"reason", "cloud_call_failed"},
                       {"policy", "fallback_cloud"}}},
-        {"tool_calls", nlohmann::json::array({{{"tool", "cloud_llm"}, {"provider", provider}, {"model", cfg_.model_name}}})},
+        {"tool_calls", nlohmann::json::array({{{"tool", "cloud_llm"}, {"provider", provider}, {"model", ctx.cfg.model_name}}})},
         {"decision_trace", nlohmann::json::array({
             {{"layer", "intent"}, {"input", ctx.text}, {"output", nlohmann::json{{"intent", "general_query"}, {"confidence", 0.40}}}},
             {{"layer", "policy"}, {"input", nlohmann::json{{"reason", "cloud_call_failed"}, {"risk", "unknown"}, {"confidence", 0.0}, {"cloud_http_status", cloud.http_status}, {"cloud_error", cloud.error}, {"route", local_result.ok ? fallback_model : "cloud_fallback"}, {"policy", "fallback_cloud"}}}, {"output", nlohmann::json{{"route", local_result.ok ? fallback_model : "cloud_fallback"}, {"policy", "fallback_cloud"}}}},
@@ -2498,15 +2498,15 @@ nlohmann::json AgentService::chat_offline_fallback(ChatContext& ctx,
       {"mode_used", "cloud-error"},
       {"intent_backend", "cloud"},
       {"provider", provider},
-      {"model", cfg_.model_name},
-      {"api_base", cfg_.api_base},
-      {"api_key_env", cfg_.api_key_env},
+      {"model", ctx.cfg.model_name},
+      {"api_base", ctx.cfg.api_base},
+      {"api_key_env", ctx.cfg.api_key_env},
       {"api_key_state", key_state},
       {"cloud_http_status", cloud.http_status},
       {"cloud_error", cloud.error},
       {"memory_size", ctx.snapshot.size()},
       {"decision", {{"route", "cloud_error"}, {"reason", "cloud_call_failed_no_fallback"}, {"policy", "reject"}}},
-      {"tool_calls", nlohmann::json::array({{{"tool", "cloud_llm"}, {"provider", provider}, {"model", cfg_.model_name}}})},
+      {"tool_calls", nlohmann::json::array({{{"tool", "cloud_llm"}, {"provider", provider}, {"model", ctx.cfg.model_name}}})},
       {"decision_trace", nlohmann::json::array({
           {{"layer", "intent"}, {"input", ctx.text}, {"output", nlohmann::json{{"intent", "general_query"}, {"confidence", 0.40}}}},
           {{"layer", "policy"}, {"input", nlohmann::json{{"reason", "cloud_call_failed_no_fallback"}, {"risk", "unknown"}, {"confidence", 0.0}, {"cloud_http_status", cloud.http_status}, {"cloud_error", cloud.error}, {"route", "cloud_error"}, {"policy", "reject"}}}, {"output", nlohmann::json{{"route", "cloud_error"}, {"policy", "reject"}}}},
@@ -2541,7 +2541,7 @@ nlohmann::json AgentService::chat_route_cloud_strategy(ChatContext& ctx,
     const double cloud_confidence = cloud_policy.value("confidence", 0.40);
     const std::string cloud_risk = cloud_policy.value("risk", "medium");
 
-    auto cloud_tool_calls = nlohmann::json::array({{{"tool", "cloud_llm"}, {"provider", provider}, {"model", cfg_.model_name}}});
+    auto cloud_tool_calls = nlohmann::json::array({{{"tool", "cloud_llm"}, {"provider", provider}, {"model", ctx.cfg.model_name}}});
 
     const std::unordered_set<std::string> allowed_strategy = {"answer_direct", "clarify", "reject"};
     const std::unordered_set<std::string> allowed_risk = {"none", "low", "medium", "high"};
@@ -2689,15 +2689,15 @@ nlohmann::json AgentService::chat_route_cloud_strategy(ChatContext& ctx,
           {"mode_used", "local-agent"},
           {"intent_backend", "cloud-strategy"},
           {"provider", provider},
-          {"model", cfg_.model_name},
-          {"api_base", cfg_.api_base},
-          {"api_key_env", cfg_.api_key_env},
+          {"model", ctx.cfg.model_name},
+          {"api_base", ctx.cfg.api_base},
+          {"api_key_env", ctx.cfg.api_key_env},
           {"api_key_state", key_state},
           {"cloud_http_status", cloud.http_status},
           {"memory_size", ctx.snapshot.size()},
           {"decision", {{"route", downgrade_to_clarify ? "local_clarify" : "local_reject"}, {"reason", reject_reason}, {"policy", downgrade_to_clarify ? "clarify" : "reject"}, {"intent", cloud_intent}, {"confidence", cloud_confidence}}},
           {"tool_calls", cloud_tool_calls},
-          {"observation", {{"cloud_policy", cloud_policy}, {"risk_gate", {{"risk", cloud_risk}, {"blocked", !downgrade_to_clarify}}}, {"reject_downgraded", downgrade_to_clarify}, {"cloud_complex_intent_gate", {{"enabled", cfg_.complex_intent_force_cloud}, {"detected", ctx.complex_intent_detected}, {"forced", ctx.force_cloud_for_complex}}}}},
+          {"observation", {{"cloud_policy", cloud_policy}, {"risk_gate", {{"risk", cloud_risk}, {"blocked", !downgrade_to_clarify}}}, {"reject_downgraded", downgrade_to_clarify}, {"cloud_complex_intent_gate", {{"enabled", ctx.cfg.complex_intent_force_cloud}, {"detected", ctx.complex_intent_detected}, {"forced", ctx.force_cloud_for_complex}}}}},
           {"decision_trace", nlohmann::json::array({
               {{"layer", "intent"}, {"input", ctx.text}, {"output", nlohmann::json{{"intent", ctx.intent_info.value("intent", "unknown")}, {"confidence", ctx.intent_info.value("confidence", 0.0)}}}},
               {{"layer", "llm"}, {"input", "cloud_strategy"}, {"output", cloud_policy}},
@@ -2724,15 +2724,15 @@ nlohmann::json AgentService::chat_route_cloud_strategy(ChatContext& ctx,
           {"mode_used", "local-agent"},
           {"intent_backend", "cloud-strategy"},
           {"provider", provider},
-          {"model", cfg_.model_name},
-          {"api_base", cfg_.api_base},
-          {"api_key_env", cfg_.api_key_env},
+          {"model", ctx.cfg.model_name},
+          {"api_base", ctx.cfg.api_base},
+          {"api_key_env", ctx.cfg.api_key_env},
           {"api_key_state", key_state},
           {"cloud_http_status", cloud.http_status},
           {"memory_size", ctx.snapshot.size()},
           {"decision", {{"route", "local_clarify"}, {"reason", "cloud_strategy_requests_clarify"}, {"policy", "clarify"}, {"intent", cloud_intent}, {"confidence", cloud_confidence}}},
           {"tool_calls", cloud_tool_calls},
-          {"observation", {{"cloud_policy", cloud_policy}, {"cloud_task_pipeline_contract", pipeline_contract_obs}, {"cloud_complex_intent_gate", {{"enabled", cfg_.complex_intent_force_cloud}, {"detected", ctx.complex_intent_detected}, {"forced", ctx.force_cloud_for_complex}}}}},
+          {"observation", {{"cloud_policy", cloud_policy}, {"cloud_task_pipeline_contract", pipeline_contract_obs}, {"cloud_complex_intent_gate", {{"enabled", ctx.cfg.complex_intent_force_cloud}, {"detected", ctx.complex_intent_detected}, {"forced", ctx.force_cloud_for_complex}}}}},
           {"decision_trace", nlohmann::json::array({
               {{"layer", "intent"}, {"input", ctx.text}, {"output", nlohmann::json{{"intent", ctx.intent_info.value("intent", "unknown")}, {"confidence", ctx.intent_info.value("confidence", 0.0)}}}},
               {{"layer", "llm"}, {"input", "cloud_strategy"}, {"output", cloud_policy}},
@@ -2754,9 +2754,9 @@ nlohmann::json AgentService::chat_route_cloud_strategy(ChatContext& ctx,
             {"mode_used", "local-agent"},
             {"intent_backend", "cloud-strategy"},
             {"provider", provider},
-            {"model", cfg_.model_name},
-            {"api_base", cfg_.api_base},
-            {"api_key_env", cfg_.api_key_env},
+            {"model", ctx.cfg.model_name},
+            {"api_base", ctx.cfg.api_base},
+            {"api_key_env", ctx.cfg.api_key_env},
             {"api_key_state", key_state},
             {"cloud_http_status", cloud.http_status},
             {"memory_size", ctx.snapshot.size()},
@@ -2781,15 +2781,15 @@ nlohmann::json AgentService::chat_route_cloud_strategy(ChatContext& ctx,
             {"mode_used", "local-agent"},
             {"intent_backend", "cloud-strategy"},
             {"provider", provider},
-            {"model", cfg_.model_name},
-            {"api_base", cfg_.api_base},
-            {"api_key_env", cfg_.api_key_env},
+            {"model", ctx.cfg.model_name},
+            {"api_base", ctx.cfg.api_base},
+            {"api_key_env", ctx.cfg.api_key_env},
             {"api_key_state", key_state},
             {"cloud_http_status", cloud.http_status},
             {"memory_size", ctx.snapshot.size()},
             {"decision", {{"route", "local_task_pipeline"}, {"reason", no_engine_outcome["reason"]}, {"policy", "reject"}, {"intent", cloud_intent}, {"confidence", cloud_confidence}}},
             {"tool_calls", cloud_tool_calls},
-            {"observation", {{"cloud_policy", cloud_policy}, {"task_engine_ready", false}, {"pipeline_error_class", no_engine_error_class}, {"pipeline_error_code", no_engine_error_code}, {"pipeline_error", no_engine_outcome["error"]}, {"pipeline_outcome", no_engine_outcome}, {"cloud_task_pipeline_contract", pipeline_contract_obs}, {"cloud_complex_intent_gate", {{"enabled", cfg_.complex_intent_force_cloud}, {"detected", ctx.complex_intent_detected}, {"forced", ctx.force_cloud_for_complex}}}}},
+            {"observation", {{"cloud_policy", cloud_policy}, {"task_engine_ready", false}, {"pipeline_error_class", no_engine_error_class}, {"pipeline_error_code", no_engine_error_code}, {"pipeline_error", no_engine_outcome["error"]}, {"pipeline_outcome", no_engine_outcome}, {"cloud_task_pipeline_contract", pipeline_contract_obs}, {"cloud_complex_intent_gate", {{"enabled", ctx.cfg.complex_intent_force_cloud}, {"detected", ctx.complex_intent_detected}, {"forced", ctx.force_cloud_for_complex}}}}},
             {"decision_trace", nlohmann::json::array({
                 {{"layer", "intent"}, {"input", ctx.text}, {"output", nlohmann::json{{"intent", ctx.intent_info.value("intent", "unknown")}, {"confidence", ctx.intent_info.value("confidence", 0.0)}}}},
                 {{"layer", "llm"}, {"input", "cloud_strategy"}, {"output", cloud_policy}},
@@ -2904,7 +2904,7 @@ nlohmann::json AgentService::chat_route_cloud_strategy(ChatContext& ctx,
         }
       }
 
-      const bool rollback_triggered = cfg_.pipeline_enable_rollback_hook && failed && completed > 0;
+      const bool rollback_triggered = ctx.cfg.pipeline_enable_rollback_hook && failed && completed > 0;
       std::vector<std::string> rollback_actions;
       if (rollback_triggered) {
         for (size_t r = pipeline_steps.size(); r > 0; --r) {
@@ -2961,7 +2961,7 @@ nlohmann::json AgentService::chat_route_cloud_strategy(ChatContext& ctx,
           {"failed", failed},
           {"failed_at", failed ? failed_at : -1},
           {"steps", pipeline_steps},
-          {"rollback", {{"enabled", cfg_.pipeline_enable_rollback_hook},
+          {"rollback", {{"enabled", ctx.cfg.pipeline_enable_rollback_hook},
                         {"triggered", rollback_triggered},
                         {"attempted_steps", rollback_triggered ? completed : 0},
                         {"executed_steps", rollback_executed},
@@ -2978,15 +2978,15 @@ nlohmann::json AgentService::chat_route_cloud_strategy(ChatContext& ctx,
           {"mode_used", "local-agent"},
           {"intent_backend", "cloud-strategy"},
           {"provider", provider},
-          {"model", cfg_.model_name},
-          {"api_base", cfg_.api_base},
-          {"api_key_env", cfg_.api_key_env},
+          {"model", ctx.cfg.model_name},
+          {"api_base", ctx.cfg.api_base},
+          {"api_key_env", ctx.cfg.api_key_env},
           {"api_key_state", key_state},
           {"cloud_http_status", cloud.http_status},
           {"memory_size", ctx.snapshot.size()},
           {"decision", {{"route", "local_task_pipeline"}, {"reason", pipeline_outcome["reason"]}, {"policy", "execute"}, {"intent", cloud_intent}, {"confidence", cloud_confidence}}},
           {"tool_calls", cloud_tool_calls},
-          {"observation", {{"cloud_policy", cloud_policy}, {"pipeline_execution", pipeline_execution}, {"pipeline_error", pipeline_error}, {"pipeline_outcome", pipeline_outcome}, {"pipeline_error_class", pipeline_error_class}, {"pipeline_error_code", pipeline_error_code}, {"cloud_task_pipeline_contract", pipeline_contract_obs}, {"cloud_complex_intent_gate", {{"enabled", cfg_.complex_intent_force_cloud}, {"detected", ctx.complex_intent_detected}, {"forced", ctx.force_cloud_for_complex}}}}},
+          {"observation", {{"cloud_policy", cloud_policy}, {"pipeline_execution", pipeline_execution}, {"pipeline_error", pipeline_error}, {"pipeline_outcome", pipeline_outcome}, {"pipeline_error_class", pipeline_error_class}, {"pipeline_error_code", pipeline_error_code}, {"cloud_task_pipeline_contract", pipeline_contract_obs}, {"cloud_complex_intent_gate", {{"enabled", ctx.cfg.complex_intent_force_cloud}, {"detected", ctx.complex_intent_detected}, {"forced", ctx.force_cloud_for_complex}}}}},
           {"decision_trace", nlohmann::json::array({
               {{"layer", "intent"}, {"input", ctx.text}, {"output", nlohmann::json{{"intent", ctx.intent_info.value("intent", "unknown")}, {"confidence", ctx.intent_info.value("confidence", 0.0)}}}},
               {{"layer", "llm"}, {"input", "cloud_strategy"}, {"output", cloud_policy}},
@@ -3004,9 +3004,9 @@ nlohmann::json AgentService::chat_route_cloud_strategy(ChatContext& ctx,
       if (reply.empty() || reply.size() > 400) {
         reply = render_template(
             policy_text("cloud.meta_answer", ""),
-            {{"mode", cfg_.mode},
-             {"model", cfg_.model_name},
-             {"provider", normalize_provider(cfg_.provider)}});
+            {{"mode", ctx.cfg.mode},
+             {"model", ctx.cfg.model_name},
+             {"provider", normalize_provider(ctx.cfg.provider)}});
       }
       const std::string style_name = policy_style_default("normal");
       const std::string answer_prefix = policy_style_text(
@@ -3016,9 +3016,9 @@ nlohmann::json AgentService::chat_route_cloud_strategy(ChatContext& ctx,
           {"mode_used", "cloud"},
           {"intent_backend", "cloud-strategy"},
           {"provider", provider},
-          {"model", cfg_.model_name},
-          {"api_base", cfg_.api_base},
-          {"api_key_env", cfg_.api_key_env},
+          {"model", ctx.cfg.model_name},
+          {"api_base", ctx.cfg.api_base},
+          {"api_key_env", ctx.cfg.api_key_env},
           {"api_key_state", key_state},
           {"cloud_http_status", cloud.http_status},
           {"memory_size", ctx.snapshot.size()},
@@ -3056,15 +3056,15 @@ nlohmann::json AgentService::chat_route_cloud_strategy(ChatContext& ctx,
           {"mode_used", "local-agent"},
           {"intent_backend", "cloud-strategy"},
           {"provider", provider},
-          {"model", cfg_.model_name},
-          {"api_base", cfg_.api_base},
-          {"api_key_env", cfg_.api_key_env},
+          {"model", ctx.cfg.model_name},
+          {"api_base", ctx.cfg.api_base},
+          {"api_key_env", ctx.cfg.api_key_env},
           {"api_key_state", key_state},
           {"cloud_http_status", cloud.http_status},
           {"memory_size", ctx.snapshot.size()},
           {"decision", {{"route", "local_profile"}, {"reason", "cloud_strategy_match_local_profile"}, {"policy", "execute"}, {"intent", "profile"}, {"confidence", cloud_confidence}}},
           {"tool_calls", cloud_tool_calls},
-          {"observation", {{"capabilities", nlohmann::json::array({"status", "event_recent", "metrics", "memory_recent", "memory_history", "action", "task_engine", "external_query"})}, {"profile_mode", "concise"}, {"cloud_policy", cloud_policy}, {"cloud_task_pipeline_contract", pipeline_contract_obs}, {"cloud_complex_intent_gate", {{"enabled", cfg_.complex_intent_force_cloud}, {"detected", ctx.complex_intent_detected}, {"forced", ctx.force_cloud_for_complex}}}}},
+          {"observation", {{"capabilities", nlohmann::json::array({"status", "event_recent", "metrics", "memory_recent", "memory_history", "action", "task_engine", "external_query"})}, {"profile_mode", "concise"}, {"cloud_policy", cloud_policy}, {"cloud_task_pipeline_contract", pipeline_contract_obs}, {"cloud_complex_intent_gate", {{"enabled", ctx.cfg.complex_intent_force_cloud}, {"detected", ctx.complex_intent_detected}, {"forced", ctx.force_cloud_for_complex}}}}},
           {"decision_trace", nlohmann::json::array({
               {{"layer", "intent"}, {"input", ctx.text}, {"output", nlohmann::json{{"intent", ctx.intent_info.value("intent", "unknown")}, {"confidence", ctx.intent_info.value("confidence", 0.0)}}}},
               {{"layer", "llm"}, {"input", "cloud_strategy"}, {"output", cloud_policy}},
@@ -3081,15 +3081,15 @@ nlohmann::json AgentService::chat_route_cloud_strategy(ChatContext& ctx,
           {"mode_used", "local-agent"},
           {"intent_backend", "cloud-strategy"},
           {"provider", provider},
-          {"model", cfg_.model_name},
-          {"api_base", cfg_.api_base},
-          {"api_key_env", cfg_.api_key_env},
+          {"model", ctx.cfg.model_name},
+          {"api_base", ctx.cfg.api_base},
+          {"api_key_env", ctx.cfg.api_key_env},
           {"api_key_state", key_state},
           {"cloud_http_status", cloud.http_status},
           {"memory_size", ctx.snapshot.size()},
           {"decision", {{"route", "local_status"}, {"reason", "cloud_strategy_match_local_status"}, {"policy", "execute"}, {"intent", "status"}, {"confidence", cloud_confidence}}},
-          {"tool_calls", nlohmann::json::array({{{"tool", "cloud_llm"}, {"provider", provider}, {"model", cfg_.model_name}}, {{"tool", "status"}}})},
-          {"observation", {{"status", st}, {"cloud_policy", cloud_policy}, {"cloud_task_pipeline_contract", pipeline_contract_obs}, {"cloud_complex_intent_gate", {{"enabled", cfg_.complex_intent_force_cloud}, {"detected", ctx.complex_intent_detected}, {"forced", ctx.force_cloud_for_complex}}}}},
+          {"tool_calls", nlohmann::json::array({{{"tool", "cloud_llm"}, {"provider", provider}, {"model", ctx.cfg.model_name}}, {{"tool", "status"}}})},
+          {"observation", {{"status", st}, {"cloud_policy", cloud_policy}, {"cloud_task_pipeline_contract", pipeline_contract_obs}, {"cloud_complex_intent_gate", {{"enabled", ctx.cfg.complex_intent_force_cloud}, {"detected", ctx.complex_intent_detected}, {"forced", ctx.force_cloud_for_complex}}}}},
           {"decision_trace", nlohmann::json::array({
               {{"layer", "intent"}, {"input", ctx.text}, {"output", nlohmann::json{{"intent", ctx.intent_info.value("intent", "unknown")}, {"confidence", ctx.intent_info.value("confidence", 0.0)}}}},
               {{"layer", "llm"}, {"input", "cloud_strategy"}, {"output", cloud_policy}},
@@ -3097,9 +3097,9 @@ nlohmann::json AgentService::chat_route_cloud_strategy(ChatContext& ctx,
           })},
           {"text", render_template(
                        policy_text("cloud.status_local", ""),
-                       {{"mode", cfg_.mode},
-                        {"model", cfg_.model_name},
-                        {"provider", normalize_provider(cfg_.provider)}})},
+                       {{"mode", ctx.cfg.mode},
+                        {"model", ctx.cfg.model_name},
+                        {"provider", normalize_provider(ctx.cfg.provider)}})},
       };
     }
 
@@ -3111,15 +3111,15 @@ nlohmann::json AgentService::chat_route_cloud_strategy(ChatContext& ctx,
             {"mode_used", "local-agent"},
             {"intent_backend", "cloud-strategy"},
             {"provider", provider},
-            {"model", cfg_.model_name},
-            {"api_base", cfg_.api_base},
-            {"api_key_env", cfg_.api_key_env},
+            {"model", ctx.cfg.model_name},
+            {"api_base", ctx.cfg.api_base},
+            {"api_key_env", ctx.cfg.api_key_env},
             {"api_key_state", key_state},
             {"cloud_http_status", cloud.http_status},
             {"memory_size", ctx.snapshot.size()},
             {"decision", {{"route", "local_task_inline"}, {"reason", "cloud_strategy_task_engine_unavailable"}, {"policy", "reject"}, {"intent", cloud_intent}, {"confidence", cloud_confidence}}},
             {"tool_calls", cloud_tool_calls},
-            {"observation", {{"cloud_policy", cloud_policy}, {"task_engine_ready", false}, {"pipeline_error_class", "engine"}, {"cloud_task_pipeline_contract", pipeline_contract_obs}, {"cloud_complex_intent_gate", {{"enabled", cfg_.complex_intent_force_cloud}, {"detected", ctx.complex_intent_detected}, {"forced", ctx.force_cloud_for_complex}}}}},
+            {"observation", {{"cloud_policy", cloud_policy}, {"task_engine_ready", false}, {"pipeline_error_class", "engine"}, {"cloud_task_pipeline_contract", pipeline_contract_obs}, {"cloud_complex_intent_gate", {{"enabled", ctx.cfg.complex_intent_force_cloud}, {"detected", ctx.complex_intent_detected}, {"forced", ctx.force_cloud_for_complex}}}}},
             {"decision_trace", nlohmann::json::array({
                 {{"layer", "intent"}, {"input", ctx.text}, {"output", nlohmann::json{{"intent", ctx.intent_info.value("intent", "unknown")}, {"confidence", ctx.intent_info.value("confidence", 0.0)}}}},
                 {{"layer", "llm"}, {"input", "cloud_strategy"}, {"output", cloud_policy}},
@@ -3144,15 +3144,15 @@ nlohmann::json AgentService::chat_route_cloud_strategy(ChatContext& ctx,
           {"mode_used", "local-agent"},
           {"intent_backend", "cloud-strategy"},
           {"provider", provider},
-          {"model", cfg_.model_name},
-          {"api_base", cfg_.api_base},
-          {"api_key_env", cfg_.api_key_env},
+          {"model", ctx.cfg.model_name},
+          {"api_base", ctx.cfg.api_base},
+          {"api_key_env", ctx.cfg.api_key_env},
           {"api_key_state", key_state},
           {"cloud_http_status", cloud.http_status},
           {"memory_size", ctx.snapshot.size()},
           {"decision", {{"route", "local_task_inline"}, {"reason", "cloud_strategy_match_local_task_inline"}, {"policy", "execute"}, {"intent", cloud_intent}, {"confidence", cloud_confidence}, {"slots", {{"action", action}, {"task_id", task_id}}}}},
           {"tool_calls", task_tool_calls},
-          {"observation", {{"cloud_policy", cloud_policy}, {"task", task}, {"inline_task", {{"action", action}, {"task_id", task_id}, {"state", state}}}, {"cloud_task_pipeline_contract", pipeline_contract_obs}, {"cloud_complex_intent_gate", {{"enabled", cfg_.complex_intent_force_cloud}, {"detected", ctx.complex_intent_detected}, {"forced", ctx.force_cloud_for_complex}}}}},
+          {"observation", {{"cloud_policy", cloud_policy}, {"task", task}, {"inline_task", {{"action", action}, {"task_id", task_id}, {"state", state}}}, {"cloud_task_pipeline_contract", pipeline_contract_obs}, {"cloud_complex_intent_gate", {{"enabled", ctx.cfg.complex_intent_force_cloud}, {"detected", ctx.complex_intent_detected}, {"forced", ctx.force_cloud_for_complex}}}}},
           {"decision_trace", nlohmann::json::array({
               {{"layer", "intent"}, {"input", ctx.text}, {"output", nlohmann::json{{"intent", ctx.intent_info.value("intent", "unknown")}, {"confidence", ctx.intent_info.value("confidence", 0.0)}}}},
               {{"layer", "llm"}, {"input", "cloud_strategy"}, {"output", cloud_policy}},
@@ -3173,15 +3173,15 @@ nlohmann::json AgentService::chat_route_cloud_strategy(ChatContext& ctx,
           {"mode_used", "local-agent"},
           {"intent_backend", "cloud-strategy"},
           {"provider", provider},
-          {"model", cfg_.model_name},
-          {"api_base", cfg_.api_base},
-          {"api_key_env", cfg_.api_key_env},
+          {"model", ctx.cfg.model_name},
+          {"api_base", ctx.cfg.api_base},
+          {"api_key_env", ctx.cfg.api_key_env},
           {"api_key_state", key_state},
           {"cloud_http_status", cloud.http_status},
           {"memory_size", ctx.snapshot.size()},
           {"decision", {{"route", "local_profile"}, {"reason", "identity_hard_gate_local_profile"}, {"policy", "execute"}, {"intent", "profile"}, {"confidence", 0.99}}},
           {"tool_calls", cloud_tool_calls},
-          {"observation", {{"capabilities", nlohmann::json::array({"status", "event_recent", "metrics", "memory_recent", "memory_history", "action", "task_engine", "external_query"})}, {"profile_mode", "concise"}, {"cloud_policy", cloud_policy}, {"cloud_task_pipeline_contract", pipeline_contract_obs}, {"cloud_complex_intent_gate", {{"enabled", cfg_.complex_intent_force_cloud}, {"detected", ctx.complex_intent_detected}, {"forced", ctx.force_cloud_for_complex}}}}},
+          {"observation", {{"capabilities", nlohmann::json::array({"status", "event_recent", "metrics", "memory_recent", "memory_history", "action", "task_engine", "external_query"})}, {"profile_mode", "concise"}, {"cloud_policy", cloud_policy}, {"cloud_task_pipeline_contract", pipeline_contract_obs}, {"cloud_complex_intent_gate", {{"enabled", ctx.cfg.complex_intent_force_cloud}, {"detected", ctx.complex_intent_detected}, {"forced", ctx.force_cloud_for_complex}}}}},
           {"decision_trace", nlohmann::json::array({
               {{"layer", "intent"}, {"input", ctx.text}, {"output", nlohmann::json{{"intent", ctx.intent_info.value("intent", "unknown")}, {"confidence", ctx.intent_info.value("confidence", 0.0)}}}},
               {{"layer", "llm"}, {"input", "cloud_strategy"}, {"output", cloud_policy}},
@@ -3201,15 +3201,15 @@ nlohmann::json AgentService::chat_route_cloud_strategy(ChatContext& ctx,
         {"mode_used", "cloud"},
         {"intent_backend", "cloud-strategy"},
         {"provider", provider},
-        {"model", cfg_.model_name},
-        {"api_base", cfg_.api_base},
-        {"api_key_env", cfg_.api_key_env},
+        {"model", ctx.cfg.model_name},
+        {"api_base", ctx.cfg.api_base},
+        {"api_key_env", ctx.cfg.api_key_env},
         {"api_key_state", key_state},
         {"cloud_http_status", cloud.http_status},
         {"memory_size", ctx.snapshot.size()},
         {"decision", {{"route", "cloud_llm"}, {"reason", "cloud_strategy_answer_direct"}, {"policy", "fallback_cloud"}, {"intent", cloud_intent}, {"confidence", cloud_confidence}}},
         {"tool_calls", cloud_tool_calls},
-        {"observation", {{"cloud_policy", cloud_policy}, {"style", style_name}, {"cloud_task_pipeline_contract", pipeline_contract_obs}, {"cloud_complex_intent_gate", {{"enabled", cfg_.complex_intent_force_cloud}, {"detected", ctx.complex_intent_detected}, {"forced", ctx.force_cloud_for_complex}}}}},
+        {"observation", {{"cloud_policy", cloud_policy}, {"style", style_name}, {"cloud_task_pipeline_contract", pipeline_contract_obs}, {"cloud_complex_intent_gate", {{"enabled", ctx.cfg.complex_intent_force_cloud}, {"detected", ctx.complex_intent_detected}, {"forced", ctx.force_cloud_for_complex}}}}},
         {"decision_trace", nlohmann::json::array({
             {{"layer", "intent"}, {"input", ctx.text}, {"output", nlohmann::json{{"intent", ctx.intent_info.value("intent", "unknown")}, {"confidence", ctx.intent_info.value("confidence", 0.0)}}}},
             {{"layer", "llm"}, {"input", "cloud_strategy"}, {"output", cloud_policy}},
@@ -3231,8 +3231,8 @@ nlohmann::json AgentService::chat_cloud_precheck(ChatContext& ctx,
                                                  std::string& api_key) {
   // 托管 sidecar：首轮对话前同步等到就绪（构造期已异步预热）。
   // 失败直接返回，避免继续打不可达端点再空耗 request_timeout。
-  if (cfg_.sidecar_enabled) {
-    const std::string warn = ensure_llm_sidecar(cfg_);
+  if (ctx.cfg.sidecar_enabled) {
+    const std::string warn = ensure_llm_sidecar(ctx.cfg);
     if (!warn.empty()) {
       std::cerr << "[WARN] " << warn << std::endl;
       return make_local_reply(
@@ -3242,27 +3242,32 @@ nlohmann::json AgentService::chat_cloud_precheck(ChatContext& ctx,
           "clarify");
     }
   }
+  // ensure 已把探测结果写入缓存。yaml 没写死窗口时，用这个数盖住函数调用预算。
+  if (ctx.cfg.context_window_tokens <= 0) {
+    if (const int window = resolved_context_window(ctx.cfg); window > 0)
+      ctx.cfg.context_window_tokens = window;
+  }
 
   // v0.42.3: cron 任务 provider 覆盖（通过 cfg_ 临时覆盖实现，见 cron callback）
-  provider = normalize_provider(cfg_.provider);
+  provider = normalize_provider(ctx.cfg.provider);
   key_state = "not_required";
 
   const int input_chars = static_cast<int>(ctx.text.size());
   const int latency_budget_ms =
-      cfg_.budget_max_latency_ms > 0 ? cfg_.budget_max_latency_ms : cfg_.request_timeout_ms;
+      ctx.cfg.budget_max_latency_ms > 0 ? ctx.cfg.budget_max_latency_ms : ctx.cfg.request_timeout_ms;
   const double estimated_cost_cents = static_cast<double>(input_chars) * 0.002;
   const bool budget_input_exceeded =
-      (cfg_.budget_max_input_chars > 0 && input_chars > cfg_.budget_max_input_chars);
+      (ctx.cfg.budget_max_input_chars > 0 && input_chars > ctx.cfg.budget_max_input_chars);
   const bool budget_latency_exceeded =
-      (cfg_.budget_max_latency_ms > 0 && latency_budget_ms < cfg_.request_timeout_ms);
+      (ctx.cfg.budget_max_latency_ms > 0 && latency_budget_ms < ctx.cfg.request_timeout_ms);
   const bool budget_cost_exceeded =
-      (cfg_.budget_max_cost_cents > 0.0 && estimated_cost_cents > cfg_.budget_max_cost_cents);
+      (ctx.cfg.budget_max_cost_cents > 0.0 && estimated_cost_cents > ctx.cfg.budget_max_cost_cents);
 
   // 配置驱动的 gate 意图（budget 超预算澄清等）
   for (const auto& gate_name : intent_names_by_kind("gate")) {
     IntentSpec gate_spec;
     if (!load_intent_spec(gate_name, &gate_spec) || gate_spec.kind != "gate") continue;
-    if (!gate_spec.gate_mode.empty() && gate_spec.gate_mode != cfg_.mode) continue;
+    if (!gate_spec.gate_mode.empty() && gate_spec.gate_mode != ctx.cfg.mode) continue;
     if (gate_spec.predicate == "budget_exceeded") {
       if (!budget_input_exceeded && !budget_latency_exceeded && !budget_cost_exceeded) continue;
       std::string reason = gate_spec.reason_budget_input;
@@ -3276,11 +3281,11 @@ nlohmann::json AgentService::chat_cloud_precheck(ChatContext& ctx,
           policy_text(gate_spec.clarify_template_key, ""),
           {{"budget_gate",
             {{"input_chars", input_chars},
-             {"max_input_chars", cfg_.budget_max_input_chars},
-             {"request_timeout_ms", cfg_.request_timeout_ms},
-             {"max_latency_ms", cfg_.budget_max_latency_ms},
+             {"max_input_chars", ctx.cfg.budget_max_input_chars},
+             {"request_timeout_ms", ctx.cfg.request_timeout_ms},
+             {"max_latency_ms", ctx.cfg.budget_max_latency_ms},
              {"estimated_cost_cents", estimated_cost_cents},
-             {"max_cost_cents", cfg_.budget_max_cost_cents},
+             {"max_cost_cents", ctx.cfg.budget_max_cost_cents},
              {"input_exceeded", budget_input_exceeded},
              {"latency_exceeded", budget_latency_exceeded},
              {"cost_exceeded", budget_cost_exceeded}}}},
@@ -3292,18 +3297,18 @@ nlohmann::json AgentService::chat_cloud_precheck(ChatContext& ctx,
     }
   }
 
-  api_key = resolve_api_key(credential_pool_.get(), cfg_.api_key_env, cfg_.provider);
+  api_key = resolve_api_key(credential_pool_.get(), ctx.cfg.api_key_env, ctx.cfg.provider);
   // v0.49.2: 测试 mock 注入存在时无需真实 key（CloudLlmClient 走 mock，
   // 不发网络请求）。否则单测里 mock 永远不可达——key 检查提前 return。
   const char* test_mock_env = std::getenv("THIN_AGENT_TEST_CLOUD_RESPONSE");
   const bool test_mock_active = (test_mock_env && *test_mock_env);
   // v0.53.34: lmstudio 本地端点无需 API key——不因 key 缺失降级 offline
   const bool provider_keyless =
-      normalize_provider(cfg_.provider) == "lmstudio";
+      normalize_provider(ctx.cfg.provider) == "lmstudio";
   key_state = (api_key.empty() && !test_mock_active && !provider_keyless)
                   ? "missing" : "present";
 
-  if (cfg_.mode == "offline") {
+  if (ctx.cfg.mode == "offline") {
     // 离线模式：走 HybridRouter (TemplateModel → GgufModel → fallback)
     // 已选本地 GGUF：生成预算跟模型 n_ctx 走（不是按生成长度动态分配 KV）
     // KV 在 load() 时按 n_ctx 一次性定好；这里只设「最多生成多少 token」
@@ -3741,9 +3746,9 @@ nlohmann::json AgentService::chat_cloud_precheck(ChatContext& ctx,
         {"mode_used", "offline-fallback"},
         {"intent_backend", "cloud"},
         {"provider", provider},
-        {"model", cfg_.model_name},
-        {"api_base", cfg_.api_base},
-        {"api_key_env", cfg_.api_key_env},
+        {"model", ctx.cfg.model_name},
+        {"api_base", ctx.cfg.api_base},
+        {"api_key_env", ctx.cfg.api_key_env},
         {"api_key_state", key_state},
         {"fallback_reason", "missing_api_key"},
         {"memory_size", ctx.snapshot.size()},
@@ -3762,8 +3767,8 @@ nlohmann::json AgentService::chat_cloud_precheck(ChatContext& ctx,
   // ── 本地优先：auto 模式（混合）或无云 key 时，完整 cascade 后再上云 ──
   //  与 offline 走相同级联（Template → Qwen懒加载 → Gemma懒加载），
   //  区别：级联失败不终止，继续走云端
-  if ((cfg_.mode == "auto" || key_state != "present") &&
-      !ctx.force_cloud_for_complex && cfg_.fallback != "none") {
+  if ((ctx.cfg.mode == "auto" || key_state != "present") &&
+      !ctx.force_cloud_for_complex && ctx.cfg.fallback != "none") {
     thin_agent::local::HybridRouter local_router;
     thin_agent::local::CascadeResult local_result;
     if (ctx.on_chunk) {
@@ -3781,7 +3786,7 @@ nlohmann::json AgentService::chat_cloud_precheck(ChatContext& ctx,
       observation["template_lang"] = reply_lang;
 
       const std::string translated_reply =
-          apply_reply_translation_if_needed(cfg_, reply_text, ctx.query_lang, reply_lang, ctx.text);
+          apply_reply_translation_if_needed(ctx.cfg, reply_text, ctx.query_lang, reply_lang, ctx.text);
       if (translated_reply != reply_text) {
         reply_text = translated_reply;
         observation["reply_translation_applied"] = true;

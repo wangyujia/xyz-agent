@@ -137,6 +137,9 @@ nlohmann::json AgentService::handle_chat(const std::string& session_id,
   ctx.on_chunk = on_chunk;
   ctx.on_event = on_event;
   ctx.image_base64 = image_base64;
+  // 热切换会改成员 cfg_。本轮对话只使用这一份快照。
+  // 窗口等 sidecar 探完再写，避免把启动前的估计值冻住。
+  ctx.cfg = cfg_snapshot();
   // 幂等键后缀：优先用客户端 cmd_id，避免同 session/同 memory 深度误复用旧任务
   ctx.idem_token = !cmd_id.empty()
                        ? cmd_id
@@ -261,7 +264,7 @@ nlohmann::json AgentService::handle_chat(const std::string& session_id,
     persist_session_msg(session_id, mem.back());  // v0.53.28 持久化
     // Token 预算裁剪（替代旧 memory_window_ 固定条数）
     trim_memory_by_token_budget(mem,
-        static_cast<size_t>(ctx_cfg_.history_budget_tokens),
+        static_cast<size_t>(history_token_budget(ctx.cfg)),
         ctx_cfg_.full_context_turns,
         static_cast<size_t>(ctx_cfg_.truncated_max_chars));
     ctx.snapshot = mem;
@@ -569,8 +572,11 @@ nlohmann::json AgentService::handle_chat_approve(const std::string& session_id,
 
         // 重建续跑上下文（与主路径同源：tools schema / key / 审批回调）
         const nlohmann::json tools_schema = skill_registry_.build_tools_schema();
+        DemoConfigCompat resume_cfg = cfg_snapshot();
+        if (const int window = resolved_context_window(resume_cfg); window > 0)
+          resume_cfg.context_window_tokens = window;
         const std::string api_key = resolve_api_key(
-            credential_pool_.get(), cfg_.api_key_env, cfg_.provider);
+            credential_pool_.get(), resume_cfg.api_key_env, resume_cfg.provider);
         auto resume_approval_cb = [this, session_id, local = pa.local_gguf,
                                    budget = pa.gen_budget](
             const std::string& tool_name, const nlohmann::json& tool_args) -> bool {
@@ -647,7 +653,7 @@ nlohmann::json AgentService::handle_chat_approve(const std::string& session_id,
           const int remaining_iters = std::max(
               1, 30 - pa.fc_iterations_used);  // 迭代预算=原上限-已用
           resumed = run_function_calling_loop(
-              cfg_, api_key, resume_msgs, tools_schema,
+              resume_cfg, api_key, resume_msgs, tools_schema,
               session_id, "", nullptr, skill_registry_,
               1, remaining_iters, true, nullptr, nullptr, resume_approval_cb);
         }
@@ -2443,7 +2449,7 @@ nlohmann::json AgentService::handle_request(const std::string& session_id, const
       persist_session_msg(session_id, mem.back());  // v0.53.28 持久化
       // Token 预算裁剪（替代旧 memory_window_ 固定条数）
       trim_memory_by_token_budget(mem,
-          static_cast<size_t>(ctx_cfg_.history_budget_tokens),
+          static_cast<size_t>(history_token_budget(cfg_snapshot())),
           ctx_cfg_.full_context_turns,
           static_cast<size_t>(ctx_cfg_.truncated_max_chars));
     }

@@ -144,6 +144,8 @@ DemoConfigCompat load_demo_profile_compat(const std::string& yaml_path, const st
       // v0.52.9: completion 预算可配（思考型模型 reasoning 与 content 共享，
       // 2048 下 reasoning 耗尽预算 content 空——真 e2e 第十二轮子代理连败）
       if (auto v = pick("max_completion_tokens"); !v.empty()) cfg.max_completion_tokens = std::stoi(v);
+      if (auto v = pick("context_window_tokens"); !v.empty())
+        cfg.context_window_tokens = std::stoi(v);
       if (auto v = pick("budget_max_input_chars"); !v.empty()) cfg.budget_max_input_chars = std::stoi(v);
       if (auto v = pick("budget_max_latency_ms"); !v.empty()) cfg.budget_max_latency_ms = std::stoi(v);
       if (auto v = pick("budget_max_cost_cents"); !v.empty()) cfg.budget_max_cost_cents = std::stod(v);
