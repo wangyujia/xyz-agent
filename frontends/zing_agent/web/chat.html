@@ -2139,9 +2139,16 @@ function applyChannelStatus(st) {
   if (st.local_endpoint_ok === false) {
     meta.textContent += ' · 本地端点未就绪';
   }
-  const nCtx = Number(st.n_ctx || 0) || 0;
-  if (nCtx > 0) ctxStats.n_ctx = nCtx;
-  if (model) ctxStats.model = String(model);
+  if (mode) ctxStats.mode = String(mode);
+  // 键存在时 0 / 空串也要写入，切换离开 sidecar 才能清掉旧窗口和旧模型名
+  if (Object.prototype.hasOwnProperty.call(st, 'n_ctx')) {
+    ctxStats.n_ctx = Number(st.n_ctx) || 0;
+  }
+  if (Object.prototype.hasOwnProperty.call(st, 'model')) {
+    const name = String(st.model || '');
+    // 通道列表和 hello 的空 model 不能清掉离线芯片名；只有切换帧可以清
+    if (name || st.type === 'profile_switched') ctxStats.model = name;
+  }
   renderCtxPanel();
 }
 function onChannelChange() {
@@ -2160,6 +2167,7 @@ function onChannelChange() {
 /* ── 上下文用量（llama-server 风格）── */
 const ctxStats = {
   n_ctx: 0,
+  mode: '',
   model: '',
   lastPrompt: 0,
   lastGen: 0,
@@ -2391,9 +2399,12 @@ function fillLocalModelSelect(obj) {
     if (obj.mtmd_runtime === false) metaText += ' · 无 mtmd.dll';
     meta.textContent = metaText;
   }
-  const nCtx = Number(cur.n_ctx || cur.n_ctx_train || 0) || 0;
-  if (nCtx > 0) ctxStats.n_ctx = nCtx;
-  if (chipText) ctxStats.model = chipText;
+  // 本地 GGUF 列表只代表进程内模型；sidecar / 云通道的窗口以通道状态为准
+  if (ctxStats.mode === 'offline') {
+    const nCtx = Number(cur.n_ctx || cur.n_ctx_train || 0) || 0;
+    if (nCtx > 0) ctxStats.n_ctx = nCtx;
+    if (chipText) ctxStats.model = chipText;
+  }
   renderCtxPanel();
 }
 function closeModelMenu() {

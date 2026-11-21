@@ -207,10 +207,19 @@ std::string AgentService::ensure_llm_sidecar(const DemoConfigCompat& cfg) {
     if (!llm_sidecar_) llm_sidecar_ = std::make_unique<LocalLlmSidecar>();
     sc = llm_sidecar_.get();
   }
+  uint64_t epoch = 0;
+  {
+    std::lock_guard<std::mutex> lk(n_ctx_mu_);
+    epoch = n_ctx_epoch_;
+  }
   std::string err;
   if (sc->ensure_running(cfg, &err)) {
     const int n_ctx = LocalLlmSidecar::fetch_n_ctx(LocalLlmSidecar::make_api_base(cfg));
-    if (n_ctx > 0) cached_n_ctx_.store(n_ctx);
+    if (n_ctx > 0) {
+      std::lock_guard<std::mutex> lk(n_ctx_mu_);
+      // 切换已经提交过更新窗口时，丢弃这次启动前的探测结果
+      if (epoch == n_ctx_epoch_) cached_n_ctx_.store(n_ctx);
+    }
     return {};
   }
   if (err.empty()) err = "sidecar_start_failed";
@@ -365,6 +374,13 @@ nlohmann::json AgentService::switch_channel(const std::string& channel) {
 
   // 任何通道切换都作废旧 boot；离开 sidecar 时 stop，进入时 ensure。
   sidecar_boot_gen_.fetch_add(1, std::memory_order_acq_rel);
+  uint64_t n_ctx_epoch = 0;
+  {
+    std::lock_guard<std::mutex> lk(n_ctx_mu_);
+    n_ctx_epoch = ++n_ctx_epoch_;
+    // 先作废旧窗口。探测失败时留下 0，而不是上一通道的值。
+    cached_n_ctx_.store(0);
+  }
   {
     std::lock_guard<std::mutex> lk(sidecar_mu_);
     if (llm_sidecar_) llm_sidecar_->stop();
@@ -399,7 +415,11 @@ nlohmann::json AgentService::switch_channel(const std::string& channel) {
     const std::string base = loaded.sidecar_enabled
                                  ? LocalLlmSidecar::make_api_base(loaded)
                                  : loaded.api_base;
-    if (local_ok || sidecar_ok) n_ctx = LocalLlmSidecar::fetch_n_ctx(base);
+    if (local_ok || sidecar_ok) {
+      // ensure 已按本代号写入缓存。再探一次失败不能把那个值写成 0。
+      n_ctx = cached_n_ctx_.load();
+      if (n_ctx <= 0) n_ctx = LocalLlmSidecar::fetch_n_ctx(base);
+    }
   } else if (loaded.mode == "offline") {
     // 进程内 GGUF：用当前 preferred 的 n_ctx
     for (const auto& st : thin_agent::local::ModelPool::instance().status_all()) {
@@ -414,7 +434,12 @@ nlohmann::json AgentService::switch_channel(const std::string& channel) {
   } else if (!loaded.model_name.empty()) {
     n_ctx = infer_context_window(loaded.model_name);
   }
-  if (n_ctx > 0) cached_n_ctx_.store(n_ctx);
+  // 解析不到也要清掉上一通道的窗口，否则离线未加载 / 端点未就绪时
+  // 界面会继续显示 sidecar 的 n_ctx。仅当中途没有更新的切换时提交。
+  {
+    std::lock_guard<std::mutex> lk(n_ctx_mu_);
+    if (n_ctx_epoch == n_ctx_epoch_) cached_n_ctx_.store(n_ctx);
+  }
 
   nlohmann::json out = {
       {"type", "profile_switched"},
@@ -432,7 +457,7 @@ nlohmann::json AgentService::switch_channel(const std::string& channel) {
     out["api_base"] = LocalLlmSidecar::make_api_base(loaded);
   }
   if (probed) out["local_endpoint_ok"] = local_ok;
-  if (n_ctx > 0) out["n_ctx"] = n_ctx;
+  out["n_ctx"] = n_ctx;
   if (!warning.empty()) out["warning"] = warning;
   return out;
 }
@@ -1420,8 +1445,17 @@ nlohmann::json AgentService::status_payload() const {
     const std::string base = snap.sidecar_enabled
                                  ? LocalLlmSidecar::make_api_base(snap)
                                  : snap.api_base;
+    uint64_t epoch = 0;
+    {
+      std::lock_guard<std::mutex> lk(n_ctx_mu_);
+      epoch = n_ctx_epoch_;
+    }
     n_ctx = LocalLlmSidecar::fetch_n_ctx(base);
-    if (n_ctx > 0) cached_n_ctx_.store(n_ctx);
+    if (n_ctx > 0) {
+      std::lock_guard<std::mutex> lk(n_ctx_mu_);
+      if (epoch == n_ctx_epoch_) cached_n_ctx_.store(n_ctx);
+      else n_ctx = cached_n_ctx_.load();
+    }
   }
   if (n_ctx <= 0 && !snap.model_name.empty())
     n_ctx = infer_context_window(snap.model_name);

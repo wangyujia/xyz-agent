@@ -555,12 +555,15 @@ nlohmann::json AgentService::handle_chat_approve(const std::string& session_id,
         tool_msg.name = tc.name;
         tool_msg.content = tr.output.empty() ? "(无输出)" : tr.output;
         resume_msgs.push_back(std::move(tool_msg));
-        // 离线模板对 tool role 支持不一：再补一条 user 观察（与 run_local_tool_loop 一致）
+        // 离线模板对 tool role 支持不一：再补一条 user 观察。
+        // 格式与 run_local_tool_loop 的 <tool_response> 一致；生成时丢掉 tool
+        // 角色，避免同一份结果再被转成第二条 user。
         if (pa.local_gguf) {
           ChatMessage obs;
           obs.role = "user";
-          obs.content = std::string("[tool_result ") + tc.name + "]\n" +
-                        utf8_truncate(tr.output.empty() ? "(无输出)" : tr.output, 4000);
+          obs.content = std::string("<tool_response>\n") +
+                        utf8_truncate(tr.output.empty() ? "(无输出)" : tr.output, 4000) +
+                        "\n</tool_response>";
           resume_msgs.push_back(std::move(obs));
         }
 
@@ -625,18 +628,13 @@ nlohmann::json AgentService::handle_chat_approve(const std::string& session_id,
             std::vector<thin_agent::local::GgufModel::ChatTurn> turns;
             turns.reserve(msgs.size());
             for (const auto& m : msgs) {
-              if (m.role != "system" && m.role != "user" &&
-                  m.role != "assistant" && m.role != "tool")
+              // tool 角色不进模板：循环里已有配对的 user <tool_response>
+              if (m.role != "system" && m.role != "user" && m.role != "assistant")
                 continue;
+              if (m.content.empty() && m.role != "assistant") continue;
               thin_agent::local::GgufModel::ChatTurn t;
-              if (m.role == "tool") {
-                t.role = "user";
-                t.content = std::string("<tool_response>\n") + m.content +
-                            "\n</tool_response>";
-              } else {
-                t.role = m.role;
-                t.content = m.content;
-              }
+              t.role = m.role;
+              t.content = m.content;
               turns.push_back(std::move(t));
             }
             return gguf_ptr->infer_turns(turns, mt);
