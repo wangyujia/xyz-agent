@@ -135,17 +135,18 @@ $cmake = "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\Comm
 powershell -NoProfile -ExecutionPolicy Bypass -File script\windows\start-llama-server.ps1
 ```
 
-常用参数：`-Model <gguf路径>`、`-Port 1234`、`-GpuLayers 99`、`-LlamaServer <exe>`、`-Stop`。
+常用参数：`-Port 1234`、`-GpuLayers 99`、`-LlamaServer <exe>`、`-Stop`。脚本以 router 启动，`--models-max 1`，目录里的模型先不载入。
 
 手动等价：
 
 ```powershell
 & <最后一个可写盘>:\deps-thin-agent\llama.cpp\bin\llama-server.exe `
-  -m backends\thin_agent\models\gguf\aurum-brain-q4_k_m.gguf `
-  --host 127.0.0.1 --port 1234 -c 4096 -ngl 99
+  --models-dir backends\thin_agent\models\gguf `
+  --models-preset backends\thin_agent\models\gguf\router-presets.ini `
+  --models-max 1 --host 127.0.0.1 --port 1234 --jinja
 ```
 
-就绪后侧栏选「本地 Aurum（lmstudio）」；健康检查：`http://127.0.0.1:1234/v1/models`。
+预设里 Aurum 是 32768，Qwen2.5-Coder-14B 是 16384。就绪后侧栏选「本地 Aurum（lmstudio）」；健康检查：`http://127.0.0.1:1234/v1/models`。列表里的模型此时是 unloaded。
 
 ## 云端 Key（方式 C）
 

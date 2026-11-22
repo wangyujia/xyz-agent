@@ -242,7 +242,9 @@ std::string AgentService::ensure_llm_sidecar(const DemoConfigCompat& cfg) {
   }
   std::string err;
   if (sc->ensure_running(cfg, &err)) {
-    const int n_ctx = LocalLlmSidecar::fetch_n_ctx(LocalLlmSidecar::make_api_base(cfg));
+    int n_ctx = LocalLlmSidecar::router_context_tokens(cfg.model_name);
+    if (n_ctx <= 0)
+      n_ctx = LocalLlmSidecar::fetch_n_ctx(LocalLlmSidecar::make_api_base(cfg));
     if (n_ctx > 0) {
       std::lock_guard<std::mutex> lk(n_ctx_mu_);
       // 切换已经提交过更新窗口时，丢弃这次启动前的探测结果
@@ -265,9 +267,26 @@ std::string local_gguf_label(const std::string& name) {
   }();
   if (lower.find("aurum") != std::string::npos) return "Aurum";
   if (lower.find("smolvlm") != std::string::npos) return "SmolVLM-500M";
+  if (lower.find("coder") != std::string::npos && lower.find("14b") != std::string::npos)
+    return "Qwen2.5-Coder-14B";
   if (lower.find("qwen") != std::string::npos) return "Qwen2.5-0.5B";
   if (lower.find("gemma") != std::string::npos) return "Gemma-3-1B";
   return name;
+}
+
+void release_inprocess_gguf(const std::string& preferred_pool) {
+  using thin_agent::local::ModelPool;
+  if (!preferred_pool.empty())
+    ModelPool::instance().set_preferred_chat(preferred_pool, false, false);
+  std::vector<std::string> loaded;
+  for (const auto& st : ModelPool::instance().status_all()) {
+    if (st.value("backend", "") != "gguf") continue;
+    if (!st.value("loaded", false)) continue;
+    loaded.push_back(st.value("name", ""));
+  }
+  for (const auto& name : loaded) {
+    if (auto* m = ModelPool::instance().find_by_name(name)) m->unload();
+  }
 }
 
 }  // namespace
@@ -332,6 +351,39 @@ nlohmann::json AgentService::switch_local_model(const std::string& name) {
             {"ok", false},
             {"error", "model_not_found"},
             {"name", name}};
+  }
+  if (cfg_snapshot().sidecar_enabled) {
+    release_inprocess_gguf(name);
+    if (ModelPool::instance().preferred_chat() != name) {
+      return {{"type", "local_model_switched"},
+              {"ok", false},
+              {"error", "model_not_found"},
+              {"name", name}};
+    }
+    const std::string api_model = LocalLlmSidecar::router_request_model(name);
+    int n_ctx = LocalLlmSidecar::router_context_tokens(name);
+    if (n_ctx <= 0) {
+      if (auto* gguf = dynamic_cast<thin_agent::local::GgufModel*>(m))
+        n_ctx = gguf->n_ctx();
+    }
+    {
+      std::lock_guard<std::mutex> lk(cfg_mu_);
+      cfg_.model_name = api_model;
+      if (n_ctx > 0) cfg_.context_window_tokens = n_ctx;
+    }
+    {
+      std::lock_guard<std::mutex> lk(n_ctx_mu_);
+      ++n_ctx_epoch_;
+      if (n_ctx > 0) cached_n_ctx_.store(n_ctx);
+    }
+    return {{"type", "local_model_switched"},
+            {"ok", true},
+            {"sidecar", true},
+            {"name", name},
+            {"model", api_model},
+            {"label", local_gguf_label(name)},
+            {"loaded", false},
+            {"n_ctx", n_ctx}};
   }
   if (!ModelPool::instance().set_preferred_chat(name, true)) {
     return {{"type", "local_model_switched"},
@@ -438,6 +490,10 @@ nlohmann::json AgentService::switch_channel(const std::string& channel) {
     }
   }
 
+  if (loaded.sidecar_enabled) {
+    release_inprocess_gguf(LocalLlmSidecar::router_pool_name(loaded.model_name));
+  }
+
   int n_ctx = 0;
   if (prov == "lmstudio") {
     const std::string base = loaded.sidecar_enabled
@@ -513,6 +569,16 @@ thin_agent::local::ModelPool::instance().add(std::move(tm));
             {"chat", 5, 0}},
         /*n_ctx=*/0, /*n_threads=*/4);
     thin_agent::local::ModelPool::instance().add(std::move(aurum));
+  }
+  // 14B 训练窗口是 128K。这里写死 16384，避免离线加载时按原生窗口分配 KV。
+  const char* coder14_path = "models/gguf/qwen2.5-coder-14b-instruct-q4_k_m.gguf";
+  if (fs::exists(coder14_path)) {
+    auto coder14 = std::make_unique<thin_agent::local::GgufModel>(
+        coder14_path,
+        std::vector<thin_agent::local::ModelCapability>{
+            {"chat", 8, 0}},
+        /*n_ctx=*/16384, /*n_threads=*/4);
+    thin_agent::local::ModelPool::instance().add(std::move(coder14));
   }
   const char* qwen_path = "models/gguf/qwen2.5-0.5b-instruct-q2_k.gguf";
   if (fs::exists(qwen_path)) {

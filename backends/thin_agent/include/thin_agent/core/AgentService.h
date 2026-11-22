@@ -193,7 +193,8 @@ class AgentService {
   /// 列出进程内可切换的本地 GGUF（ModelPool），供 UI 选模型。
   nlohmann::json list_local_models() const;
 
-  /// 热切换当前聊天首选本地模型（卸载其它 GGUF 并加载目标）。
+  /// 热切换本地模型。sidecar 开着时只改请求的模型名，由 llama-server 按需载入；
+  /// 离线通道才在进程内加载。
   nlohmann::json switch_local_model(const std::string& name);
 
   /// 当前逻辑通道名（如 lmstudio_mode）。

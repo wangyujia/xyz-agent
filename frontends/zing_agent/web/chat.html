@@ -2834,7 +2834,13 @@ function handleIncoming(obj) {
     let label = String(obj.label || obj.name || '');
     if (obj.vision) label += ' · 视觉';
     setModelChipLabel(label, false);
-    pushMsg('system', '已切换本地模型：' + label + '（下次对话生效）' +
+    if (obj.sidecar && obj.n_ctx) {
+      ctxStats.n_ctx = Number(obj.n_ctx) || 0;
+      ctxStats.model = label;
+      renderCtxPanel();
+    }
+    pushMsg('system', '已切换本地模型：' + label +
+      (obj.sidecar ? '（下次对话由 llama-server 载入这一份）' : '（下次对话生效）') +
       (obj.vision ? '' : (obj.vision_capable ? '（加载后可视觉）' : '')));
     requestLocalModelList();
     return;

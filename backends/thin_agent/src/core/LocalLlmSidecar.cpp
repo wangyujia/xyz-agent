@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <thread>
@@ -158,13 +159,113 @@ void LocalLlmSidecar::resolve_listen(const DemoConfigCompat& cfg, std::string* h
   if (port) *port = p;
 }
 
+namespace {
+
+struct RouterSpec {
+  const char* id;
+  const char* file;
+  const char* alias;
+  int n_ctx;
+};
+
+// 段名是文件名去掉扩展名，和 ModelPool / models-dir 的 id 一致。
+// alias 不能等于另一个模型 id。14B 的请求名就是它自己的 id。
+const RouterSpec kRouterSpecs[] = {
+    {"aurum-brain-q4_k_m", "aurum-brain-q4_k_m.gguf", "aurum-brain", 32768},
+    {"qwen2.5-coder-14b-instruct-q4_k_m", "qwen2.5-coder-14b-instruct-q4_k_m.gguf",
+     "", 16384},
+    {"qwen2.5-0.5b-instruct-q2_k", "qwen2.5-0.5b-instruct-q2_k.gguf", "", 32768},
+    {"gemma-3-1b-it-q4_k_m", "gemma-3-1b-it-q4_k_m.gguf", "", 32768},
+};
+
+const RouterSpec* find_router_spec(const std::string& name) {
+  for (const auto& spec : kRouterSpecs) {
+    if (name == spec.id) return &spec;
+    if (spec.alias && spec.alias[0] && name == spec.alias) return &spec;
+  }
+  return nullptr;
+}
+
+std::filesystem::path resolve_models_dir() {
+  namespace fs = std::filesystem;
+  const fs::path cands[] = {
+      fs::path("models") / "gguf",
+      fs::path("..") / "models" / "gguf",
+      fs::path("backends") / "thin_agent" / "models" / "gguf",
+  };
+  for (const auto& cand : cands) {
+    std::error_code ec;
+    if (fs::is_directory(cand, ec)) return fs::absolute(cand, ec);
+  }
+  return {};
+}
+
+bool write_router_preset(const std::filesystem::path& dir,
+                         const std::filesystem::path& preset, int n_gpu_layers,
+                         std::string* err) {
+  std::ofstream out(preset.string(), std::ios::binary | std::ios::trunc);
+  if (!out) {
+    if (err) *err = "cannot write router preset: " + preset.string();
+    return false;
+  }
+  int written = 0;
+  for (const auto& spec : kRouterSpecs) {
+    const auto file = dir / spec.file;
+    std::error_code ec;
+    if (!std::filesystem::exists(file, ec)) continue;
+    out << "[" << spec.id << "]\n";
+    out << "ctx-size = " << spec.n_ctx << "\n";
+    out << "model = " << file.string() << "\n";
+    if (spec.alias && spec.alias[0]) out << "alias = " << spec.alias << "\n";
+    if (n_gpu_layers >= 0) out << "n-gpu-layers = " << n_gpu_layers << "\n";
+    out << "\n";
+    ++written;
+  }
+  if (written == 0) {
+    if (err) *err = "no GGUF for router preset in " + dir.string();
+    return false;
+  }
+  return static_cast<bool>(out);
+}
+
+bool endpoint_is_router(const std::string& api_base) {
+  std::string root = api_base;
+  while (!root.empty() && root.back() == '/') root.pop_back();
+  if (root.size() >= 3 && root.compare(root.size() - 3, 3, "/v1") == 0)
+    root = root.substr(0, root.size() - 3);
+  CurlHttpClient http(2000);
+  auto resp = http.get(root + "/props", "");
+  if (!(resp.ok && resp.status_code >= 200 && resp.status_code < 300)) return false;
+  return resp.body.find("\"role\":\"router\"") != std::string::npos ||
+         resp.body.find("\"role\": \"router\"") != std::string::npos;
+}
+
+}  // namespace
+
 std::string LocalLlmSidecar::identity_of(const DemoConfigCompat& cfg) {
   std::ostringstream oss;
-  oss << make_api_base(cfg) << "|"
-      << (cfg.sidecar_model_path.empty() ? "models/gguf/aurum-brain-q4_k_m.gguf"
-                                         : cfg.sidecar_model_path)
-      << "|" << cfg.model_name << "|n_ctx=" << cfg.sidecar_n_ctx;
+  oss << make_api_base(cfg) << "|router|max=1";
+  if (cfg.sidecar_n_gpu_layers >= 0)
+    oss << "|ngl=" << cfg.sidecar_n_gpu_layers;
   return oss.str();
+}
+
+int LocalLlmSidecar::router_context_tokens(const std::string& name) {
+  if (const auto* spec = find_router_spec(name)) return spec->n_ctx;
+  return 0;
+}
+
+std::string LocalLlmSidecar::router_request_model(const std::string& pool_name) {
+  if (const auto* spec = find_router_spec(pool_name)) {
+    if (spec->alias && spec->alias[0]) return spec->alias;
+    return spec->id;
+  }
+  return pool_name;
+}
+
+std::string LocalLlmSidecar::router_pool_name(const std::string& name) {
+  if (const auto* spec = find_router_spec(name)) return spec->id;
+  return name;
 }
 
 bool LocalLlmSidecar::probe(const std::string& api_base, int timeout_ms,
@@ -292,10 +393,6 @@ bool LocalLlmSidecar::spawn(const DemoConfigCompat& cfg, std::string* err) {
   std::string server = cfg.sidecar_server_path.empty()
                            ? default_server_path()
                            : resolve_existing(cfg.sidecar_server_path);
-  std::string model = cfg.sidecar_model_path.empty()
-                          ? "models/gguf/aurum-brain-q4_k_m.gguf"
-                          : cfg.sidecar_model_path;
-  model = resolve_existing(model);
 
   namespace fs = std::filesystem;
   std::error_code ec;
@@ -303,24 +400,40 @@ bool LocalLlmSidecar::spawn(const DemoConfigCompat& cfg, std::string* err) {
     if (err) *err = "llama-server not found: " + server;
     return false;
   }
-  if (!fs::exists(model, ec)) {
-    if (err) *err = "sidecar model not found: " + model;
+  const fs::path models_dir = resolve_models_dir();
+  if (models_dir.empty()) {
+    if (err) *err = "models/gguf directory not found";
     return false;
   }
+  const fs::path preset = models_dir / "router-presets.ini";
+  if (!write_router_preset(models_dir, preset, cfg.sidecar_n_gpu_layers, err))
+    return false;
 
   std::string host;
   int port = 0;
   resolve_listen(cfg, &host, &port);
 
+  // router：进程只起一次。--models-max 1 保证内存里同时只有一份权重。
+  // 上下文写在 preset 里，不在命令行上放全局 -c，也不在启动时 -m 加载。
+  std::vector<std::string> args = {
+      server,
+      "--models-dir",
+      models_dir.string(),
+      "--models-preset",
+      preset.string(),
+      "--models-max",
+      "1",
+      "--host",
+      host,
+      "--port",
+      std::to_string(port),
+      "--jinja",
+  };
   std::ostringstream cmd;
-  cmd << quote_arg(server) << " -m " << quote_arg(model) << " --host " << host
-      << " --port " << port << " --jinja";
-  if (!cfg.model_name.empty())
-    cmd << " --alias " << quote_arg(cfg.model_name);
-  if (cfg.sidecar_n_ctx > 0) cmd << " -c " << cfg.sidecar_n_ctx;
-  if (cfg.sidecar_n_gpu_layers >= 0)
-    cmd << " -ngl " << cfg.sidecar_n_gpu_layers;
-
+  for (size_t i = 0; i < args.size(); ++i) {
+    if (i) cmd << ' ';
+    cmd << quote_arg(args[i]);
+  }
   const std::string cmdline = cmd.str();
   std::cerr << "[LocalLlmSidecar] start: " << cmdline << std::endl;
 
@@ -374,23 +487,9 @@ bool LocalLlmSidecar::spawn(const DemoConfigCompat& cfg, std::string* err) {
     return false;
   }
   if (pid == 0) {
-    std::vector<std::string> args_store = {server, "-m", model, "--host", host,
-                                           "--port", std::to_string(port), "--jinja"};
-    if (!cfg.model_name.empty()) {
-      args_store.push_back("--alias");
-      args_store.push_back(cfg.model_name);
-    }
-    if (cfg.sidecar_n_ctx > 0) {
-      args_store.push_back("-c");
-      args_store.push_back(std::to_string(cfg.sidecar_n_ctx));
-    }
-    if (cfg.sidecar_n_gpu_layers >= 0) {
-      args_store.push_back("-ngl");
-      args_store.push_back(std::to_string(cfg.sidecar_n_gpu_layers));
-    }
     std::vector<char*> argv;
-    argv.reserve(args_store.size() + 1);
-    for (auto& s : args_store) argv.push_back(s.data());
+    argv.reserve(args.size() + 1);
+    for (auto& s : args) argv.push_back(s.data());
     argv.push_back(nullptr);
     execv(server.c_str(), argv.data());
     _exit(127);
@@ -425,33 +524,29 @@ bool LocalLlmSidecar::ensure_running(const DemoConfigCompat& cfg, std::string* e
 
   auto cancelled = [&]() { return cancel_gen_.load() != gen; };
 
-  // 已有健康且身份匹配的端点 → 复用（外部或本进程上次拉起）
+  // 已有 router 且身份匹配 → 复用。当前模型的 n_ctx 在 preset 里，
+  // 换模型不会改身份，也不按 sidecar_n_ctx 重建进程。
   if (probe(base, 2000, expect_model)) {
+    const bool router_live = endpoint_is_router(base);
     std::string cur_id;
     {
       std::lock_guard<std::mutex> lk(mu_);
       cur_id = identity_;
     }
-    const int live_ctx = fetch_n_ctx(base);
-    const bool ctx_ok =
-        cfg.sidecar_n_ctx <= 0 || live_ctx <= 0 || live_ctx == cfg.sidecar_n_ctx;
-    if (ctx_ok && (cur_id.empty() || cur_id == want_id)) {
+    if (router_live && (cur_id.empty() || cur_id == want_id)) {
       std::lock_guard<std::mutex> lk(mu_);
       identity_ = want_id;
-      std::cerr << "[LocalLlmSidecar] reuse healthy endpoint " << base
-                << (live_ctx > 0 ? (" n_ctx=" + std::to_string(live_ctx)) : "")
-                << std::endl;
+      std::cerr << "[LocalLlmSidecar] reuse router " << base << std::endl;
       return true;
     }
-    // 同端口但身份 / n_ctx 变了：我们拥有则重建；外部则报错
+    // 外部的单模型进程不杀。我们自己拉起的旧进程落到下面重建。
     if (!owned_.load()) {
       if (err) {
-        if (!ctx_ok) {
-          *err = "endpoint n_ctx=" + std::to_string(live_ctx) +
-                 " but profile wants " + std::to_string(cfg.sidecar_n_ctx) +
-                 " (stop the process on " + base + " and retry)";
+        if (!router_live) {
+          *err = "端口上是单模型 llama-server，请先停下它，再由 sidecar 以 router 启动 (" +
+                 base + ")";
         } else {
-          *err = "endpoint healthy but model identity mismatch (external process on " +
+          *err = "endpoint healthy but router identity mismatch (external process on " +
                  base + ")";
         }
       }

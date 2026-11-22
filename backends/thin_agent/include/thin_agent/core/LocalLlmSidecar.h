@@ -46,8 +46,17 @@ class LocalLlmSidecar {
   /// 解析监听 host/port：优先 sidecar_*；若空则从 api_base URL 拆。
   static void resolve_listen(const DemoConfigCompat& cfg, std::string* host, int* port);
 
-  /// 身份指纹：api_base + model_path + alias，变化则不可盲目 reuse。
+  /// 身份指纹：监听地址 + router。不含当前模型名和 n_ctx，换模型不重启进程。
   static std::string identity_of(const DemoConfigCompat& cfg);
+
+  /// Router 预设里的上下文。name 可以是 ModelPool 名或请求别名。未知返回 0。
+  static int router_context_tokens(const std::string& name);
+
+  /// 列表里的模型名 → 请求体 model。Aurum 用别名 aurum-brain。
+  static std::string router_request_model(const std::string& pool_name);
+
+  /// 请求别名 → ModelPool 名。
+  static std::string router_pool_name(const std::string& name);
 
  private:
   bool spawn(const DemoConfigCompat& cfg, std::string* err);

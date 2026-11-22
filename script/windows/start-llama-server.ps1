@@ -1,4 +1,5 @@
-# 启动本地 llama-server（OpenAI 兼容，默认监听 1234），供 thin_agent lmstudio_mode 通道使用。
+# 以 router 启动本地 llama-server（OpenAI 兼容，默认监听 1234）。
+# --models-max 1：目录里的模型只登记，请求到哪一个才载入哪一个。
 # 用法：
 #   powershell -ExecutionPolicy Bypass -File script\windows\start-llama-server.ps1
 #   powershell -ExecutionPolicy Bypass -File script\windows\start-llama-server.ps1 -Port 1234 -GpuLayers 99
@@ -76,34 +77,64 @@ if (-not $LlamaServer -or -not (Test-Path $LlamaServer)) {
   Write-Host "请用 -LlamaServer 指定，或安装到最后一个可写盘：$hint"
   exit 1
 }
-if (-not (Test-Path $Model)) {
-  Write-Host "找不到 GGUF 模型：$Model"
-  Write-Host "请把 aurum-brain-q4_k_m.gguf 放到 backends\thin_agent\models\gguf\，或用 -Model 指定路径。"
+$ModelsDir = Join-Path $Root "backends\thin_agent\models\gguf"
+if (-not (Test-Path $ModelsDir)) {
+  Write-Host "找不到模型目录：$ModelsDir"
   exit 1
 }
 
+$known = @(
+  @{ id = "aurum-brain-q4_k_m"; file = "aurum-brain-q4_k_m.gguf"; alias = "aurum-brain"; ctx = 32768 },
+  @{ id = "qwen2.5-coder-14b-instruct-q4_k_m"; file = "qwen2.5-coder-14b-instruct-q4_k_m.gguf"; alias = ""; ctx = 16384 },
+  @{ id = "qwen2.5-0.5b-instruct-q2_k"; file = "qwen2.5-0.5b-instruct-q2_k.gguf"; alias = ""; ctx = 32768 },
+  @{ id = "gemma-3-1b-it-q4_k_m"; file = "gemma-3-1b-it-q4_k_m.gguf"; alias = ""; ctx = 32768 }
+)
+$presetLines = @()
+$presetCount = 0
+foreach ($spec in $known) {
+  $file = Join-Path $ModelsDir $spec.file
+  if (-not (Test-Path $file)) { continue }
+  $presetLines += "[" + $spec.id + "]"
+  $presetLines += "ctx-size = " + $spec.ctx
+  $presetLines += "model = " + $file
+  if ($spec.alias) { $presetLines += "alias = " + $spec.alias }
+  if ($GpuLayers -ge 0) { $presetLines += "n-gpu-layers = " + $GpuLayers }
+  $presetLines += ""
+  $presetCount++
+}
+if ($presetCount -eq 0) {
+  Write-Host "模型目录里没有可用的 GGUF：$ModelsDir"
+  exit 1
+}
+$Preset = Join-Path $ModelsDir "router-presets.ini"
+Set-Content -Path $Preset -Value $presetLines -Encoding ascii
+
 $listen = "http://${HostAddr}:${Port}"
 try {
-  $r = Invoke-WebRequest -UseBasicParsing -TimeoutSec 1 "$listen/v1/models"
-  if ($r.StatusCode -eq 200) {
-    Write-Host "本地端点已在监听 $listen ，跳过启动。"
+  $props = Invoke-WebRequest -UseBasicParsing -TimeoutSec 1 "http://${HostAddr}:${Port}/props"
+  if ($props.Content -match '"role"\s*:\s*"router"') {
+    Write-Host "router 已在监听 $listen ，跳过启动。"
     exit 0
   }
+  Write-Host "端口 $Port 上已有单模型 llama-server。请先 -Stop，再启动 router。"
+  exit 1
 } catch {}
 
-Write-Host "启动 llama-server"
-Write-Host "  bin   : $LlamaServer"
-Write-Host "  model : $Model"
-Write-Host "  listen: $listen"
-Write-Host "  ctx   : $CtxSize  ngl=$GpuLayers"
+Write-Host "启动 llama-server router"
+Write-Host "  bin    : $LlamaServer"
+Write-Host "  models : $ModelsDir"
+Write-Host "  preset : $Preset"
+Write-Host "  listen : $listen"
+Write-Host "  max    : 1  ngl=$GpuLayers"
 
 Start-Process -FilePath $LlamaServer -ArgumentList @(
-  "-m", $Model,
+  "--models-dir", $ModelsDir,
+  "--models-preset", $Preset,
+  "--models-max", "1",
   "--host", $HostAddr,
   "--port", "$Port",
-  "-c", "$CtxSize",
-  "-ngl", "$GpuLayers"
+  "--jinja"
 ) -WorkingDirectory (Split-Path -Parent $LlamaServer)
 
-Write-Host "已后台启动。thin_agent 侧边栏切到「本地 Aurum（lmstudio）」即可热切换使用。"
+Write-Host "已后台启动。模型保持 unloaded，选中后才载入当前这一份。"
 Write-Host "健康检查: $listen/v1/models"
