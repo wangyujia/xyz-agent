@@ -85,6 +85,7 @@ if (-not (Test-Path $ModelsDir)) {
 
 $known = @(
   @{ id = "aurum-brain-q4_k_m"; file = "aurum-brain-q4_k_m.gguf"; alias = "aurum-brain"; ctx = 32768 },
+  @{ id = "qwen2.5-coder-7b-instruct-q4_k_m"; file = "qwen2.5-coder-7b-instruct-q4_k_m.gguf"; alias = ""; ctx = 16384 },
   @{ id = "qwen2.5-coder-14b-instruct-q4_k_m"; file = "qwen2.5-coder-14b-instruct-q4_k_m.gguf"; alias = ""; ctx = 16384 },
   @{ id = "qwen2.5-0.5b-instruct-q2_k"; file = "qwen2.5-0.5b-instruct-q2_k.gguf"; alias = ""; ctx = 32768 },
   @{ id = "gemma-3-1b-it-q4_k_m"; file = "gemma-3-1b-it-q4_k_m.gguf"; alias = ""; ctx = 32768 }

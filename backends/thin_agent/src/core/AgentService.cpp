@@ -269,6 +269,8 @@ std::string local_gguf_label(const std::string& name) {
   if (lower.find("smolvlm") != std::string::npos) return "SmolVLM-500M";
   if (lower.find("coder") != std::string::npos && lower.find("14b") != std::string::npos)
     return "Qwen2.5-Coder-14B";
+  if (lower.find("coder") != std::string::npos && lower.find("7b") != std::string::npos)
+    return "Qwen2.5-Coder-7B";
   if (lower.find("qwen") != std::string::npos) return "Qwen2.5-0.5B";
   if (lower.find("gemma") != std::string::npos) return "Gemma-3-1B";
   return name;
@@ -570,7 +572,16 @@ thin_agent::local::ModelPool::instance().add(std::move(tm));
         /*n_ctx=*/0, /*n_threads=*/4);
     thin_agent::local::ModelPool::instance().add(std::move(aurum));
   }
-  // 14B 训练窗口是 128K。这里写死 16384，避免离线加载时按原生窗口分配 KV。
+  // Coder 训练窗口很大；离线加载写死 16384，避免按原生窗口分配 KV。
+  const char* coder7_path = "models/gguf/qwen2.5-coder-7b-instruct-q4_k_m.gguf";
+  if (fs::exists(coder7_path)) {
+    auto coder7 = std::make_unique<thin_agent::local::GgufModel>(
+        coder7_path,
+        std::vector<thin_agent::local::ModelCapability>{
+            {"chat", 7, 0}},
+        /*n_ctx=*/16384, /*n_threads=*/4);
+    thin_agent::local::ModelPool::instance().add(std::move(coder7));
+  }
   const char* coder14_path = "models/gguf/qwen2.5-coder-14b-instruct-q4_k_m.gguf";
   if (fs::exists(coder14_path)) {
     auto coder14 = std::make_unique<thin_agent::local::GgufModel>(

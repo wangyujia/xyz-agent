@@ -198,22 +198,65 @@ function Ensure-Curl([string]$WinDeps, [string]$Cache, $Vs) {
   if (-not (Test-Path $cfg)) { throw "curl 安装后仍没有 $cfg" }
 }
 
-function Ensure-Onnx([string]$Dest, [string]$Cache) {
-  $lib = Join-Path $Dest "lib\onnxruntime.lib"
-  if (Test-Path $lib) { return $Dest }
+function Ensure-Onnx([string]$Dest, [string]$Cache, [string]$RepoOnnx = "") {
+  # 本地已有就直接用，别再去网上下。
+  foreach ($root in @($Dest, $RepoOnnx)) {
+    if (-not $root) { continue }
+    $lib = Join-Path $root "lib\onnxruntime.lib"
+    if (Test-Path $lib) {
+      Write-Host "复用已有 ONNX Runtime: $root"
+      return $root
+    }
+  }
+
+  # NuGet 包在本机解过：拼成 CMake 期望的 include/ + lib/
+  $nugetNative = Join-Path (Split-Path $Dest) "ort\runtimes\win-x64\native"
+  if ((Test-Path (Join-Path $nugetNative "onnxruntime.lib")) -and $RepoOnnx -and (Test-Path (Join-Path $RepoOnnx "include"))) {
+    Write-Host "从本地 NuGet 布局组装 ONNX Runtime: $Dest"
+    New-Item -ItemType Directory -Force -Path (Join-Path $Dest "lib") | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $Dest "include") | Out-Null
+    Copy-Item (Join-Path $nugetNative "onnxruntime.*") (Join-Path $Dest "lib") -Force
+    Copy-Item (Join-Path $RepoOnnx "include\*") (Join-Path $Dest "include") -Force
+    if (Test-Path (Join-Path $Dest "lib\onnxruntime.lib")) { return $Dest }
+  }
+
   $zip = Join-Path $Cache "onnxruntime-win-x64-1.20.1.zip"
-  Save-Url "https://github.com/microsoft/onnxruntime/releases/download/v1.20.1/onnxruntime-win-x64-1.20.1.zip" $zip
+  $nupkg = Join-Path $Cache "Microsoft.ML.OnnxRuntime.1.20.1.nupkg"
+  # GitHub release 资源名常变/404；优先 NuGet，其次旧 GitHub URL。
+  if (-not (Test-Path $zip)) {
+    try {
+      Save-Url "https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime/1.20.1" $nupkg
+      Copy-Item $nupkg $zip -Force
+    } catch {
+      Save-Url "https://github.com/microsoft/onnxruntime/releases/download/v1.20.1/onnxruntime-win-x64-1.20.1.zip" $zip
+    }
+  }
   $stage = Join-Path $Cache "onnxruntime-win-x64"
   if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
   New-Item -ItemType Directory -Force -Path $stage | Out-Null
   $code = Invoke-Native tar.exe -xf $zip -C $stage
   if ($code -ne 0) { throw "解压 ONNX Runtime 失败。" }
-  $inner = Get-ChildItem $stage -Directory | Select-Object -First 1
-  if (-not (Test-Path (Join-Path $inner.FullName "lib\onnxruntime.lib"))) {
-    throw "ONNX Runtime 包里没有 lib\onnxruntime.lib。"
+
+  $official = Get-ChildItem $stage -Directory | Where-Object {
+    Test-Path (Join-Path $_.FullName "lib\onnxruntime.lib")
+  } | Select-Object -First 1
+  if ($official) {
+    if (Test-Path $Dest) { Remove-Item -Recurse -Force $Dest }
+    Move-Item $official.FullName $Dest
+    return $Dest
+  }
+  $native = Get-ChildItem $stage -Recurse -Filter "onnxruntime.lib" -ErrorAction SilentlyContinue |
+    Where-Object { $_.DirectoryName -match 'win-x64' } |
+    Select-Object -First 1
+  if (-not $native) { throw "ONNX Runtime 包里没有 win-x64 的 onnxruntime.lib。" }
+  if (-not $RepoOnnx -or -not (Test-Path (Join-Path $RepoOnnx "include"))) {
+    throw "NuGet 包无头文件，且仓库 third_party/onnxruntime/include 也不存在。"
   }
   if (Test-Path $Dest) { Remove-Item -Recurse -Force $Dest }
-  Move-Item $inner.FullName $Dest
+  New-Item -ItemType Directory -Force -Path (Join-Path $Dest "lib") | Out-Null
+  New-Item -ItemType Directory -Force -Path (Join-Path $Dest "include") | Out-Null
+  Copy-Item (Join-Path $native.DirectoryName "onnxruntime.*") (Join-Path $Dest "lib") -Force
+  Copy-Item (Join-Path $RepoOnnx "include\*") (Join-Path $Dest "include") -Force
   return $Dest
 }
 
@@ -238,7 +281,8 @@ Write-Host "llama.cpp    : $llamaRoot"
 $llama = Ensure-Llama $llamaRoot $vs
 Ensure-Sqlite $winDeps $cache
 Ensure-Curl $winDeps $cache $vs
-$onnx = Ensure-Onnx (Join-Path $deps "onnxruntime-win-x64") $cache
+$repoOnnx = Join-Path $AgentRoot "third_party\onnxruntime"
+$onnx = Ensure-Onnx (Join-Path $deps "onnxruntime-win-x64") $cache $repoOnnx
 
 $env:LLAMA_CPP_DIR = $llama.Dir
 $env:LLAMA_CPP_SRC = $llama.Src

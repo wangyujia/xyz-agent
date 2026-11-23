@@ -172,6 +172,8 @@ struct RouterSpec {
 // alias 不能等于另一个模型 id。14B 的请求名就是它自己的 id。
 const RouterSpec kRouterSpecs[] = {
     {"aurum-brain-q4_k_m", "aurum-brain-q4_k_m.gguf", "aurum-brain", 32768},
+    {"qwen2.5-coder-7b-instruct-q4_k_m", "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
+     "", 16384},
     {"qwen2.5-coder-14b-instruct-q4_k_m", "qwen2.5-coder-14b-instruct-q4_k_m.gguf",
      "", 16384},
     {"qwen2.5-0.5b-instruct-q2_k", "qwen2.5-0.5b-instruct-q2_k.gguf", "", 32768},
